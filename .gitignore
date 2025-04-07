@@ -1,0 +1,22 @@
+# Environment variables
+.env
+
+# Python virtual environment
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Spot robot image files
+spot_image_*.jpg
+
+# Temporary audio files
+*.wav
+
+# Logs
+*.log
+
+# OS specific files
+.DS_Store
+Thumbs.db 

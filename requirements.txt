@@ -1,0 +1,9 @@
+pyaudio>=0.2.13
+numpy>=1.24.0
+faster-whisper>=0.4.0
+websockets>=11.0.3
+bosdyn-client>=3.3.0
+bosdyn-api>=3.3.0
+python-dotenv>=1.0.0
+ollama>=0.1.5
+requests>=2.31.0 
