@@ -73,8 +73,6 @@ Use analyze_image() only if the user's command requires it.
 Use get_odometry() only if the user's command requires it.
 Use this information, if necessary, to plan your actions, execute them, and monitor progress until the task is complete.
 
-IF YOU DO NOT UNDERSTAND THE COMMAND, CONSIDER YOUR TASK DONE
-
 Many commands can be completed without gathering any information.
 
 Respond ONLY with valid JSON in this format:
@@ -105,22 +103,22 @@ Example response for "navigate to the chair":
 # Define Pydantic models for structured output
 class TaskStatus(BaseModel):
     """Task completion status"""
-    complete: bool = Field(False, description="Whether the task is complete")
-    success: bool = Field(None, description="Whether the task was completed successfully")
-    reason: str = Field("", description="Explanation of the current status")
+    complete: bool = Field(..., description="Whether the task is complete")
+    success: bool = Field(..., description="Whether the task was completed successfully")
+    reason: str = Field(..., description="Explanation of the current status")
 
 class SpotParameters(BaseModel):
     """Parameters for Spot robot commands"""
-    forward_backward: float = Field(0.0, description="Distance in meters to move forward (positive) or backward (negative)")
-    left_right: float = Field(0.0, description="Distance in meters to move right (positive) or left (negative)")
-    degrees: float = Field(0.0, description="Degrees to turn (positive for clockwise, negative for counterclockwise)")
+    forward_backward: float = Field(..., description="Distance in meters to move forward (positive) or backward (negative)")
+    left_right: float = Field(..., description="Distance in meters to move right (positive) or left (negative)")
+    degrees: float = Field(..., description="Degrees to turn (positive for clockwise, negative for counterclockwise)")
 
 class SpotCommand(BaseModel):
     """Command for Spot robot"""
     thought: str = Field(..., description="Reasoning about the command")
     action: str = Field(..., description="The action to perform")
-    parameters: SpotParameters = Field(default_factory=SpotParameters, description="Parameters for the action")
-    task_status: TaskStatus = Field(default_factory=TaskStatus, description="Current task status")
+    parameters: SpotParameters = Field(..., description="Parameters for the action")
+    task_status: TaskStatus = Field(..., description="Current task status")
 
 class AudioProcessor:
     """Handles microphone input and speech-to-text conversion using offline Whisper"""
