@@ -22,16 +22,8 @@ from action_logger import ActionLogger
 def main():
     """Main application function"""
     print("Starting SpotAgent...")
-    audio_processor = AudioProcessor()
-    
-    # Initialize the prompt logger
-    prompt_logger = PromptLogger()
-    
-    # Initialize the LLM processor with the prompt logger
-    llm_processor = LLMProcessor(prompt_logger=prompt_logger)
-    
+
     spot_controller = SpotController()
-    
     # Connect to Spot robot
     print("Connecting to Spot robot...")
     if os.getenv("SPOT_IP"):
@@ -44,6 +36,16 @@ def main():
         print("No Spot robot configuration found. Running in simulation mode.")
         spot_connected = False
     
+    
+    # Initialize the prompt logger
+    prompt_logger = PromptLogger()
+    
+    # Initialize the LLM processor with the prompt logger
+    llm_processor = LLMProcessor(prompt_logger=prompt_logger, spot_controller=spot_controller)
+    audio_processor = AudioProcessor()
+    
+
+
     # Initialize and start the perception logger
     perception_logger = PerceptionLogger(spot_controller)
     perception_logger.start()
@@ -63,11 +65,6 @@ def main():
             
             # Get transcription
             text = audio_processor.get_transcription()
-            
-            # Exit if asked
-            if text and any(keyword in text.lower() for keyword in ["exit", "quit", "stop"]):
-                print("Exiting application...")
-                break
             
             # Process with LLM and start task execution loop
             if text:
@@ -107,7 +104,7 @@ def main():
                     # Log the action and thought
                     action_logger.log_action(thought, action, params, task_status)
                     
-                    task_complete = task_status.get('complete', False) or task_status.get('success', False) or action_data["action"] is None or action_data.get('action', '').lower() in ['', 'none', 'stop', 'exit', 'quit', 'null']
+                    task_complete = task_status.get('complete', False) or action == 'task_complete' or action_data["action"] is None or action_data.get('action', '').lower() in ['', 'none', 'stop', 'exit', 'quit', 'null']
                     
                     print(f"Thought: {thought}")
                     print(f"Action: {action}")
@@ -118,19 +115,10 @@ def main():
                     # Store results for next iteration
                     task_data = {"last_action": action, "last_result": None}
                     
-                    # Execute the action
-                    if action == 'walk_forward' or action == 'relative_move' and params.get('forward_backward', 0) > 0:
-                        result = spot_controller.walk_forward(params.get('forward_backward', 1.0))
-                        task_data["last_result"] = {"success": result}
-                    
-                    elif action == 'walk_backward' or action == 'relative_move' and params.get('forward_backward', 0) < 0:
-                        result = spot_controller.walk_backward(abs(params.get('forward_backward', 1.0)))
-                        task_data["last_result"] = {"success": result}
-                    
-                    elif action == 'relative_move':
+                    if action == 'relative_move':
                         result = spot_controller.relative_move(
-                            params.get('forward_backward', 0), 
-                            params.get('left_right', 0)
+                            params.get('forward_backward', 0) or 0, 
+                            params.get('left_right', 0) or 0
                         )
                         task_data["last_result"] = {"success": result}
                     
@@ -172,6 +160,15 @@ def main():
                         seconds = params.get('seconds', 1)
                         logs = spot_controller.get_terrain_logs(seconds)
                         task_data["last_result"] = logs
+                    
+                    elif action == 'access_historical_log':
+                        seconds_ago = params.get('seconds_ago', 60)
+                        odometry_logs = spot_controller.get_odometry_logs(seconds_ago)
+                        vision_logs = spot_controller.get_vision_logs(seconds_ago)
+                        task_data["last_result"] = {
+                            "odometry_logs": odometry_logs,
+                            "vision_logs": vision_logs
+                        }
                     
                     elif action == 'task_complete':
                         # The LLM has decided the task is complete

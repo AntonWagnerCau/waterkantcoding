@@ -1,8 +1,11 @@
 import os
 import requests
 import json
+import time
 from google import genai
 from pydantic import BaseModel, Field
+from utils.timestamp_utils import parse_timestamp
+from spot_controller import SpotController
 
 
 # LLM System Prompt for Spot control
@@ -22,15 +25,15 @@ Available actions:
 - turn(degrees): Turn clockwise (positive) or counterclockwise (negative)
 - sit(): Make the robot sit
 - stand(): Make the robot stand up
-- get_odometry_logs(seconds): Get recent odometry logs for the past seconds
-- get_vision_logs(seconds): Get recent vision logs for the past seconds
 - task_complete(success, reason): Indicate that the task is complete with success status and reason
 
 First, evaluate the command to understand what you're being asked to do.
-Then, retrieve the relevant information about the environment using get_odometry_logs(), get_vision_logs(), or get_terrain_logs(), try to keep the number of seconds to a minimum.
 Use this information, if necessary, to plan your actions, execute them, and monitor progress until the task is complete.
 
 Try not to repeat your actions needlessly.
+
+ALWAYS MAKE SURE YOUR ACTIONS COMPLY WITH YOUR THOUGHTS.
+IF YOU THINK "MONITOR" THEN DO NOT CALL "MOVE"
 
 Respond ONLY with valid JSON in this format:
 {
@@ -39,20 +42,18 @@ Respond ONLY with valid JSON in this format:
     "parameters": {"parameter_name": value},
     "task_status": {
         "complete": true/false,
-        "success": true/false,
         "reason": "Explanation of current status"
     }
 }
 
-Example response for "navigate to the chair":
+Example response for "move forward 1 meter":
 {
-    "thought": "I need to find the chair first, then plan a path to it",
-    "action": "get_vision_logs",
-    "parameters": {"seconds": 1},
+    "thought": "I need to move forward 1 meter",
+    "action": "relative_move",
+    "parameters": {"forward_backward": 1},
     "task_status": {
-        "complete": false,
-        "success": null,
-        "reason": "Need to locate the chair first"
+        "complete": true,
+        "reason": "Moved forward 1 meter"
     }
 }
 """
@@ -61,7 +62,6 @@ Example response for "navigate to the chair":
 class TaskStatus(BaseModel):
     """Task completion status"""
     complete: bool = Field(..., description="Whether the task is complete")
-    success: bool = Field(..., description="Whether the task was completed successfully")
     reason: str = Field(..., description="Explanation of the current status")
 
 class SpotParameters(BaseModel):
@@ -70,6 +70,8 @@ class SpotParameters(BaseModel):
     left_right: float = Field(None, description="Distance in meters to move right (positive) or left (negative)")
     degrees: float = Field(None, description="Degrees to turn (positive for clockwise, negative for counterclockwise)")
     seconds: int = Field(None, description="Number of seconds to look back for logs")
+    success: bool = Field(None, description="Whether the task was completed successfully")
+    reason: str = Field(None, description="Reason for the task completion")
 
 class SpotCommand(BaseModel):
     """Command for Spot robot"""
@@ -82,7 +84,7 @@ class SpotCommand(BaseModel):
 
 class LLMProcessor:
     """Processes text through a locally running LLM or cloud API"""
-    def __init__(self, prompt_logger=None):
+    def __init__(self, prompt_logger=None, spot_controller=None):
         # Determine which LLM provider to use
         self.provider = os.getenv("LLM_PROVIDER", "ollama").lower()
         print(f"Using LLM provider: {self.provider}")
@@ -96,6 +98,9 @@ class LLMProcessor:
         
         # Store prompt logger
         self.prompt_logger = prompt_logger
+        
+        # Store spot controller reference for accessing logs
+        self.spot_controller : SpotController = spot_controller
         
         if self.provider == "ollama":
             self._setup_ollama()
@@ -158,34 +163,70 @@ class LLMProcessor:
             
         print(f"Google API configured with model: {self.google_model}")
     
+    def _build_prompt(self, text, task_data=None, action_log=None):
+        """Build the prompt with system context, action log, and task data"""
+        prompt = f"{SPOT_SYSTEM_PROMPT}\n\n"
+        
+        # Get the latest vision and odometry logs
+        latest_vision_log = self.spot_controller.get_vision_logs(1) if hasattr(self, 'spot_controller') and self.spot_controller else None
+        latest_odometry_log = self.spot_controller.get_odometry_logs(1) if hasattr(self, 'spot_controller') and self.spot_controller else None
+        
+        # Add action log if available
+        if action_log and len(action_log) > 0:
+            for i, entry in enumerate(action_log):
+                if entry.get("event_type") == "task_start":
+                    timestamp = parse_timestamp(entry.get('timestamp'))
+                    time_ago = f" {round(time.time() - timestamp, 1)} seconds ago"
+                    prompt += f"Task started with command: {entry.get('command')}{time_ago}.\n"
+                    prompt += "So far you've done this:\n" if len(action_log) > 1 else "So far no actions have been taken\n"
+                elif entry.get("event_type") == "action":
+                    if i < len(action_log) - 3:
+                        continue
+                    timestamp = parse_timestamp(entry.get('timestamp'))
+                    time_ago = f" was taken {round(time.time() - timestamp, 1)} seconds ago"
+                    prompt += f"Action {i}: {entry.get('action')}{time_ago}.\n"
+                    prompt += f"  Thought: {entry.get('thought')}\n"
+                    # Filter out null parameters
+                    params = {k:v for k,v in entry.get('parameters', {}).items() if v is not None}
+                    if params != {}:
+                        params_str = json.dumps(params, indent=2).replace('\n', '\n  ')
+                        prompt += f"  Parameters: {params_str}\n"
+                    if "task_status" in entry and entry["task_status"].get("reason"):
+                        prompt += f"  Status: {entry['task_status'].get('reason')}\n"
+                    prompt += "\n"
+            prompt += "\n"
+        
+        # Add current task data including latest perception data if available
+        if task_data is None:
+            task_data = {}
+        
+        # Integrate latest logs into task_data
+        if latest_vision_log:
+            task_data["latest_vision"] = latest_vision_log
+        
+        if latest_odometry_log:
+            task_data["latest_odometry"] = latest_odometry_log
+        
+        if task_data:
+            prompt += f"Current task information:\n{json.dumps(task_data, indent=2)}\n\n"
+        
+        # Add current command
+        prompt += f"User command: {text}"
+        
+        return prompt
+
+    def _handle_response(self, provider, text, prompt, result):
+        """Common response handling logic"""
+        # Log the response if logger is available
+        if self.prompt_logger and result:
+            self.prompt_logger.log_response(result)
+            
+        return result
+
     def _process_with_ollama(self, text, task_data=None, action_log=None):
         """Process a text command through local LLM with Ollama"""
         try:
-            # Format prompt with conversation context
-            prompt = f"{SPOT_SYSTEM_PROMPT}\n\n"
-            
-            # Add action log if available
-            if action_log and len(action_log) > 0:
-                for i, entry in enumerate(action_log):
-                    if entry.get("event_type") == "task_start":
-                        prompt += f"Task started with command: {entry.get('command')}\n"
-                        prompt += "So far you've done this:\n" if len(action_log) > 1 else "So far no actions have been taken\n"
-                    elif entry.get("event_type") == "action":
-                        prompt += f"Action {i}: {entry.get('action')}\n"
-                        prompt += f"  Thought: {entry.get('thought')}\n"
-                        params_str = json.dumps(entry.get('parameters'), indent=2).replace('\n', '\n  ')
-                        prompt += f"  Parameters: {params_str}\n"
-                        if "task_status" in entry and entry["task_status"].get("reason"):
-                            prompt += f"  Status: {entry['task_status'].get('reason')}\n"
-                        prompt += "\n"
-                prompt += "\n"
-            
-            # Add current task data if available
-            if task_data:
-                prompt += f"Current task information:\n{json.dumps(task_data, indent=2)}\n\n"
-                
-            # Add current command
-            prompt += f"User command: {text}"
+            prompt = self._build_prompt(text, task_data, action_log)
             
             # Log the prompt if logger is available
             if self.prompt_logger:
@@ -210,11 +251,7 @@ class LLMProcessor:
             # Extract JSON from response
             result = self._extract_json_from_text(response_text)
             
-            # Log the response if logger is available
-            if self.prompt_logger and result:
-                self.prompt_logger.log_response(result)
-                
-            return result
+            return self._handle_response("ollama", text, prompt, result)
                 
         except Exception as e:
             print(f"Error processing with Ollama: {e}")
@@ -223,47 +260,23 @@ class LLMProcessor:
     def _process_with_openrouter(self, text, task_data=None, action_log=None):
         """Process a text command through OpenRouter API"""
         try:
-            # Build the messages array with context
-            messages = [{"role": "system", "content": SPOT_SYSTEM_PROMPT}]
+            prompt = self._build_prompt(text, task_data, action_log)
             
-            # Add action log if available
-            action_log_text = ""
+            # Build messages array for OpenRouter format
+            messages = [
+                {"role": "system", "content": SPOT_SYSTEM_PROMPT}
+            ]
+            
+            # Add action log and task data as system messages if available
             if action_log and len(action_log) > 0:
-                for i, entry in enumerate(action_log):
-                    if entry.get("event_type") == "task_start":
-                        action_log_text += f"Task started with command: {entry.get('command')}\n"
-                        action_log_text += "So far you've done this:\n" if len(action_log) > 1 else "So far no actions have been taken\n"
-                    elif entry.get("event_type") == "action":
-                        action_log_text += f"Action {i}: {entry.get('action')}\n"
-                        action_log_text += f"  Thought: {entry.get('thought')}\n"
-                        params_str = json.dumps(entry.get('parameters'), indent=2).replace('\n', '\n  ')
-                        action_log_text += f"  Parameters: {params_str}\n"
-                        if "task_status" in entry and entry["task_status"].get("reason"):
-                            action_log_text += f"  Status: {entry['task_status'].get('reason')}\n"
-                        action_log_text += "\n"
-                
-                messages.append({"role": "system", "content": action_log_text})
+                messages.append({"role": "system", "content": prompt[len(SPOT_SYSTEM_PROMPT)+2:prompt.rfind("User command:")]})
             
-            # Add current task data if available
-            task_data_text = ""
-            if task_data:
-                task_data_text = f"Current task information:\n{json.dumps(task_data, indent=2)}"
-                messages.append({"role": "system", "content": task_data_text})
-                
             # Add current command
             messages.append({"role": "user", "content": text})
             
             # Log the prompt if logger is available
             if self.prompt_logger:
-                # Reconstruct the full prompt for logging
-                full_prompt = f"{SPOT_SYSTEM_PROMPT}\n\n"
-                if action_log_text:
-                    full_prompt += action_log_text + "\n"
-                if task_data_text:
-                    full_prompt += task_data_text + "\n\n"
-                full_prompt += f"User command: {text}"
-                
-                self.prompt_logger.log_prompt("openrouter", text, full_prompt)
+                self.prompt_logger.log_prompt("openrouter", text, prompt)
             
             response = requests.post(
                 url="https://openrouter.ai/api/v1/chat/completions",
@@ -287,11 +300,7 @@ class LLMProcessor:
             # Extract JSON from response
             result = self._extract_json_from_text(response_text)
             
-            # Log the response if logger is available
-            if self.prompt_logger and result:
-                self.prompt_logger.log_response(result)
-                
-            return result
+            return self._handle_response("openrouter", text, prompt, result)
                 
         except Exception as e:
             print(f"Error processing with OpenRouter: {e}")
@@ -300,31 +309,7 @@ class LLMProcessor:
     def _process_with_google(self, text, task_data=None, action_log=None):
         """Process a text command through Google Gemini API using the genai SDK"""
         try:
-            # Format prompt with conversation context
-            prompt = f"{SPOT_SYSTEM_PROMPT}\n\n"
-            
-            # Add action log if available
-            if action_log and len(action_log) > 0:
-                for i, entry in enumerate(action_log):
-                    if entry.get("event_type") == "task_start":
-                        prompt += f"Task started with command: {entry.get('command')}\n"
-                        prompt += "So far you've done this:\n" if len(action_log) > 1 else "So far no actions have been taken\n"
-                    elif entry.get("event_type") == "action":
-                        prompt += f"Action {i}: {entry.get('action')}\n"
-                        prompt += f"  Thought: {entry.get('thought')}\n"
-                        params_str = json.dumps(entry.get('parameters'), indent=2).replace('\n', '\n  ')
-                        prompt += f"  Parameters: {params_str}\n"
-                        if "task_status" in entry and entry["task_status"].get("reason"):
-                            prompt += f"  Status: {entry['task_status'].get('reason')}\n"
-                        prompt += "\n"
-                prompt += "\n"
-            
-            # Add current task data if available
-            if task_data:
-                prompt += f"Current task information:\n{json.dumps(task_data, indent=2)}\n\n"
-                
-            # Add current command
-            prompt += f"User command: {text}"
+            prompt = self._build_prompt(text, task_data, action_log)
             
             # Log the prompt if logger is available
             if self.prompt_logger:
@@ -357,11 +342,7 @@ class LLMProcessor:
                 print(response)
                 return None
             
-            # Log the response if logger is available
-            if self.prompt_logger and result:
-                self.prompt_logger.log_response(result)
-                
-            return result
+            return self._handle_response("google", text, prompt, result)
                 
         except Exception as e:
             print(f"Error processing with Google API: {e}")

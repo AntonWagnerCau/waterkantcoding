@@ -17,7 +17,7 @@ class ActionLogger:
         """Start a new task log file"""
         self.task_count += 1
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        task_filename = f"task_{self.task_count}_{timestamp}.jsonl"
+        task_filename = f"task_{timestamp}_{self.task_count}.jsonl"
         self.current_task_file = os.path.join(self.logs_dir, task_filename)
         
         # Create the initial entry

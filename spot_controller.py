@@ -3,15 +3,17 @@ import numpy as np
 import time
 import os
 import json
+import bosdyn.api.image_pb2 as image_pb2
 from PIL import Image
 from mimetypes import guess_type
 from bosdyn.client import create_standard_sdk
 from bosdyn.client.lease import LeaseClient
 from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.client.robot_command import RobotCommandClient, RobotCommandBuilder
-from bosdyn.client.image import ImageClient
+from bosdyn.client.image import ImageClient, build_image_request
 from bosdyn.client.frame_helpers import get_vision_tform_body
-
+import io
+from utils.timestamp_utils import parse_timestamp
 
 class SpotController:
     """Controls the Boston Dynamics Spot robot"""
@@ -109,6 +111,8 @@ class SpotController:
         
         return odometry_data
     
+
+        
     def analyze_images(self):
         """Capture images and generate a caption of what the robot sees"""
 
@@ -116,6 +120,14 @@ class SpotController:
         camera_names = ["frontleft_fisheye_image", "frontright_fisheye_image", "left_fisheye_image", "right_fisheye_image", "back_fisheye_image"]
         image_paths = self.take_pictures(camera_names)
         vision_data = []
+        camera_name_to_description = {
+            "frontleft_fisheye_image": "Ahead, to the right the",
+            "frontright_fisheye_image": "Ahead, to the left the",
+            "left_fisheye_image": "To the left the",
+            "right_fisheye_image": "To the right the",
+            "back_fisheye_image": "Behind the",
+        }
+
         if not image_paths:
             #print("Failed to capture image")
             vision_data = {"description": "Unable to capture image"}
@@ -137,7 +149,7 @@ class SpotController:
                     else:
                         raise
                     # Create description
-                    description = f"The robot sees: {caption} in it's {camera_names[i]} camera"
+                    description = f"{camera_name_to_description[camera_names[i]]} robot sees: {caption}"
                     
                     vision_data.append({"description": description})
                 
@@ -245,6 +257,7 @@ class SpotController:
             
             # Create a simple test image
             img = Image.new('RGB', (640, 480), color=(73, 109, 137))
+            img = img.rotate(90, expand=True)  # Rotate simulation image too
             img.save(self.last_image_path)
             return self.last_image_path
         
@@ -253,15 +266,25 @@ class SpotController:
             image_client : ImageClient = self.robot.ensure_client('image')
             
             # Request image from front camera
-            image_response = image_client.get_image_from_sources(camera_names)
+            request = [build_image_request(source, image_format=image_pb2.Image.Format.FORMAT_JPEG, pixel_format=image_pb2.Image.PixelFormat.PIXEL_FORMAT_RGB_U8) for source in camera_names]
+            image_response = image_client.get_image(request)
             
             # Save the image
             image_paths = []
             for i, image_data in enumerate(image_response): 
                 self.last_image_path = f"images/spot_image_{camera_names[i]}_{int(time.time())}.jpg"
-                with open(self.last_image_path, 'wb') as outfile:
-                    outfile.write(image_data.shot.image.data)
-                #print(f"Image saved as {self.last_image_path}")
+                
+                # Convert image data to PIL Image
+                image = Image.open(io.BytesIO(image_data.shot.image.data))
+                
+                # Apply rotations based on camera name
+                if "frontleft" in camera_names[i] or "frontright" in camera_names[i]:
+                    image = image.rotate(-90, expand=True)  # -90 for clockwise rotation
+                elif "right" in camera_names[i]:
+                    image = image.rotate(180, expand=True)
+                
+                # Save the rotated image
+                image.save(self.last_image_path, quality=95)
                 image_paths.append(self.last_image_path)
             return image_paths
         except Exception as e:
@@ -299,6 +322,7 @@ class SpotController:
             return {"error": "No perception logs found"}
         
         result = {}
+        current_time = time.time()
         
         try:
             # Get odometry logs if requested
@@ -315,7 +339,14 @@ class SpotController:
                     # Read the last 'count' lines
                     with open(log_path, 'r') as f:
                         lines = f.readlines()
-                        entries = [json.loads(line) for line in lines[-seconds*5:]]
+                        entries = []
+                        for line in lines[-1:]:
+                            entry = json.loads(line)
+                            # Add time_ago field to each entry
+                            if 'timestamp' in entry:
+                                timestamp = parse_timestamp(entry['timestamp'], current_time)
+                                entry['time_ago'] = round(current_time - timestamp, 1)
+                            entries.append(entry)
                         result['odometry'] = entries
             
             # Get vision logs if requested
@@ -332,7 +363,14 @@ class SpotController:
                     # Read the last 'count' lines
                     with open(log_path, 'r') as f:
                         lines = f.readlines()
-                        entries = [json.loads(line) for line in lines[-seconds*2:]]
+                        entries = []
+                        for line in lines[-1:]:
+                            entry = json.loads(line)
+                            # Add time_ago field to each entry
+                            if 'timestamp' in entry:
+                                timestamp = parse_timestamp(entry['timestamp'], current_time)
+                                entry['time_ago'] = round(current_time - timestamp, 1)
+                            entries.append(entry)
                         result['vision'] = entries
                         
             return result
