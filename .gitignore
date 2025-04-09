@@ -16,7 +16,9 @@ spot_image_*.jpg
 
 # Logs
 *.log
+*logs/
 
 # OS specific files
 .DS_Store
 Thumbs.db 
+

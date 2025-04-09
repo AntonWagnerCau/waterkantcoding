@@ -119,9 +119,6 @@ class SpotController:
         if not image_paths:
             #print("Failed to capture image")
             vision_data = {"description": "Unable to capture image"}
-        elif self.vision_model is None:
-            #print("No vision model available: returning placeholder image description")
-            vision_data = {"description": "Simulated image analysis: The robot appears to be in a room with various objects."}
         else:
             # Use online vision model to analyze the image
             try:
@@ -131,7 +128,7 @@ class SpotController:
                         response = requests.post(
                             url,    
                             files = {
-                            "file": (f.name, f, guess_type(image_path)[0] or "image/jpeg")
+                            "image_file": (f.name, f, guess_type(image_path)[0] or "image/jpeg")
                             }
                         )
   
@@ -264,7 +261,7 @@ class SpotController:
                 self.last_image_path = f"images/spot_image_{camera_names[i]}_{int(time.time())}.jpg"
                 with open(self.last_image_path, 'wb') as outfile:
                     outfile.write(image_data.shot.image.data)
-                print(f"Image saved as {self.last_image_path}")
+                #print(f"Image saved as {self.last_image_path}")
                 image_paths.append(self.last_image_path)
             return image_paths
         except Exception as e:
@@ -437,3 +434,136 @@ class SpotController:
             return {'vision': logs['vision']}
         else:
             return logs  # Returns error if any
+
+    def get_terrain_grid(self, grid_size_m=5.0, resolution_cm=3.0):
+        """Get terrain height grid data around the robot
+        
+        Args:
+            grid_size_m: Size of the grid in meters (default: 5.0)
+            resolution_cm: Resolution of the grid in centimeters (default: 3.0)
+            
+        Returns:
+            numpy.ndarray: 2D grid of height values, centered on the robot
+        """
+        if not self.connected:
+            # Simulation mode - create a synthetic terrain grid
+            return self._simulate_terrain_grid(grid_size_m, resolution_cm)
+        
+        try:
+            # In a real implementation, this would use the Spot API to get terrain data
+            # This could use several approaches:
+            # 1. Use the depth images from multiple cameras to create a local height map
+            # 2. Request terrain data from the robot's SLAM or mapping system
+            # 3. Use a separate lidar or depth sensor data
+
+            # For now, since we don't have direct access to height grid data in the Spot API,
+            # we'll use the simulation as a placeholder until a real implementation is created
+            return self._simulate_terrain_grid(grid_size_m, resolution_cm)
+        
+        except Exception as e:
+            print(f"Error getting terrain grid: {e}")
+            # Fall back to simulation on error
+            return self._simulate_terrain_grid(grid_size_m, resolution_cm)
+        
+    def _simulate_terrain_grid(self, grid_size_m=5.0, resolution_cm=3.0):
+        """Create a simulated terrain grid for testing
+        
+        Args:
+            grid_size_m: Size of the grid in meters
+            resolution_cm: Resolution of the grid in centimeters
+            
+        Returns:
+            numpy.ndarray: 2D grid of simulated height values
+        """
+        import numpy as np
+        
+        # Calculate grid dimensions based on size and resolution
+        grid_cells = int(grid_size_m * 100 / resolution_cm)
+        
+        # Get current robot position and orientation
+        position = self.position
+        orientation = self.orientation
+        
+        # Create base grid - flat terrain with small random noise
+        height_grid = np.zeros((grid_cells, grid_cells))
+        height_grid += np.random.normal(0, 0.01, height_grid.shape)  # 1cm noise
+        
+        # Create coordinate grid
+        x, y = np.meshgrid(
+            np.linspace(-grid_size_m/2, grid_size_m/2, grid_cells),
+            np.linspace(-grid_size_m/2, grid_size_m/2, grid_cells)
+        )
+        
+        # Add some terrain features based on robot position to make it change as robot moves
+        
+        # Add a small hill
+        hill_x = position["x"] % 2 - 1  # Use modulo to create repeating pattern
+        hill_y = position["y"] % 2 - 1
+        r = np.sqrt((x - hill_x)**2 + (y - hill_y)**2)
+        height_grid += 0.15 * np.exp(-r**2 / 1.0)  # 15cm tall Gaussian hill
+        
+        # Add a ditch/trench
+        trench_angle = np.radians(orientation["yaw"] + 45)  # Angled relative to robot orientation
+        trench_dist = x * np.cos(trench_angle) + y * np.sin(trench_angle)
+        height_grid -= 0.1 * np.exp(-trench_dist**2 / 0.04)  # 10cm deep trench
+        
+        # Add some small random obstacles
+        for _ in range(10):
+            # Random positions within the grid
+            obs_x = np.random.uniform(-grid_size_m/2, grid_size_m/2)
+            obs_y = np.random.uniform(-grid_size_m/2, grid_size_m/2)
+            obs_r = np.sqrt((x - obs_x)**2 + (y - obs_y)**2)
+            # Small obstacles of varying height (2-5cm)
+            obs_height = np.random.uniform(0.02, 0.05)
+            height_grid += obs_height * np.exp(-obs_r**2 / 0.01)
+        
+        # Add a simulated wall or edge beyond which height increases rapidly
+        edge_dist = 2.0  # 2 meters from center
+        wall_mask = (np.abs(x) > edge_dist) | (np.abs(y) > edge_dist)
+        height_grid[wall_mask] += 0.2  # 20cm wall/edge
+        
+        # Ensure all heights are physically plausible
+        # (e.g., if we're simulating terrain relative to robot standing height)
+        height_grid += 0.01  # Add 1cm minimum ground clearance
+        
+        return height_grid
+
+    def get_terrain_logs(self, seconds=1):
+        """Retrieve recent terrain analysis logs
+        
+        Args:
+            seconds: Number of seconds to look back for terrain logs
+            
+        Returns:
+            Dictionary with most recent terrain log entries
+        """
+        logs_dir = "perception_logs"
+        
+        if not os.path.exists(logs_dir):
+            return {"error": "No terrain logs found"}
+        
+        result = {}
+        
+        try:
+            # Get terrain logs
+            terrain_logs = sorted(
+                [f for f in os.listdir(logs_dir) if f.startswith('terrain_')],
+                reverse=True
+            )
+            
+            if terrain_logs:
+                latest_log = terrain_logs[0]
+                log_path = os.path.join(logs_dir, latest_log)
+                
+                # Read the last N lines
+                with open(log_path, 'r') as f:
+                    lines = f.readlines()
+                    # Terrain logs are less frequent, so we need fewer entries per second
+                    entries = [json.loads(line) for line in lines[-seconds*2:]]
+                    result['terrain'] = entries
+                    
+            return result
+            
+        except Exception as e:
+            print(f"Error retrieving terrain logs: {e}")
+            return {"error": str(e)}

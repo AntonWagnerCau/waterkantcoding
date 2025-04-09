@@ -167,7 +167,12 @@ def main():
                         seconds = params.get('seconds', 1)
                         logs = spot_controller.get_vision_logs(seconds)
                         task_data["last_result"] = logs
-                        
+                    
+                    elif action == 'get_terrain_logs':
+                        seconds = params.get('seconds', 1)
+                        logs = spot_controller.get_terrain_logs(seconds)
+                        task_data["last_result"] = logs
+                    
                     elif action == 'task_complete':
                         # The LLM has decided the task is complete
                         task_complete = True

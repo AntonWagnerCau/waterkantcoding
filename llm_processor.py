@@ -27,7 +27,7 @@ Available actions:
 - task_complete(success, reason): Indicate that the task is complete with success status and reason
 
 First, evaluate the command to understand what you're being asked to do.
-Then, retrieve the relevant information about the environment using get_odometry_logs() or get_vision_logs(), try to keep the number of seconds to a minimum.
+Then, retrieve the relevant information about the environment using get_odometry_logs(), get_vision_logs(), or get_terrain_logs(), try to keep the number of seconds to a minimum.
 Use this information, if necessary, to plan your actions, execute them, and monitor progress until the task is complete.
 
 Try not to repeat your actions needlessly.

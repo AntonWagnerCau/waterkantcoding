@@ -10,7 +10,7 @@ with open(image_path, "rb") as f:
     response = requests.post(
         url,    
         files = {
-        "file": (f.name, f, guess_type(image_path)[0] or "image/jpeg")
+        "image_file": (f.name, f, guess_type(image_path)[0] or "image/jpeg")
         }
     )
     end = time.time()
