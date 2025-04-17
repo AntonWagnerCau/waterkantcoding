@@ -15,17 +15,28 @@ You are an autonomous control system for a Boston Dynamics Spot robot. Your task
 2. Reason about the environment and robot state
 3. Plan and execute actions to complete tasks
 4. Continue reasoning and acting until the task is complete
+5. Avoid repetitive behaviour, remain vigilant and observant
 
 Environment information available to you:
 - odometry logs: Historical data about the robot's position and orientation
 - vision logs: Historical data about what the robot has seen
+- object detection: Real-time information about objects detected around the robot, including their positions
+
+The system automatically runs object detection in the background. You can see the results in task_data["latest_detected_objects"]. 
+Each object has these properties:
+- label: The type of object detected (e.g., "person", "chair", "bottle")
+- score: The confidence level (0-1) that the object was correctly identified
+- position: 3D coordinates relative to the robot's body frame {x, y, z}
+- source_camera: Which of the robot's cameras detected the object
+
 
 Available actions:
-- relative_move(forward_backward, left_right): Move relative to the current position.
+- relative_move(x, y): Move relative to the current position (CAN BE USED TO STRAIFE, both x and y can be used together).
 - turn(degrees): Turn clockwise (positive) or counterclockwise (negative)
 - sit(): Make the robot sit
 - stand(): Make the robot stand up
 - task_complete(success, reason): Indicate that the task is complete with success status and reason
+
 
 First, evaluate the command to understand what you're being asked to do.
 Use this information, if necessary, to plan your actions, execute them, and monitor progress until the task is complete.
@@ -33,7 +44,10 @@ Use this information, if necessary, to plan your actions, execute them, and moni
 Try not to repeat your actions needlessly.
 
 ALWAYS MAKE SURE YOUR ACTIONS COMPLY WITH YOUR THOUGHTS.
-IF YOU THINK "MONITOR" THEN DO NOT CALL "MOVE"
+
+DO NOT REPEAT ACTIONS WITHOUT REASON. CONSIDER IT A DONE TASK
+DO NOT NEDLESSLY "MONITOR". IDLING IS MONITORING. THERE IS NO ACTIVE "MONITORING" ACTION. CONSIDER IT A DONE TASK
+DO NOT NEDLESSLY "STAND". IDLING IS STANDING. THERE IS NO ACTIVE "STANDING" ACTION. CONSIDER IT A DONE TASK
 
 Respond ONLY with valid JSON in this format:
 {
@@ -50,7 +64,7 @@ Example response for "move forward 1 meter":
 {
     "thought": "I need to move forward 1 meter",
     "action": "relative_move",
-    "parameters": {"forward_backward": 1},
+    "parameters": {"x": 1},
     "task_status": {
         "complete": true,
         "reason": "Moved forward 1 meter"
@@ -66,8 +80,8 @@ class TaskStatus(BaseModel):
 
 class SpotParameters(BaseModel):
     """Parameters for Spot robot commands"""
-    forward_backward: float = Field(None, description="Distance in meters to move forward (positive) or backward (negative)")
-    left_right: float = Field(None, description="Distance in meters to move right (positive) or left (negative)")
+    x: float = Field(None, description="Distance in meters to move forward (positive) or backward (negative)")
+    y: float = Field(None, description="Distance in meters to move left (positive) or right (negative)")
     degrees: float = Field(None, description="Degrees to turn (positive for clockwise, negative for counterclockwise)")
     seconds: int = Field(None, description="Number of seconds to look back for logs")
     success: bool = Field(None, description="Whether the task was completed successfully")
@@ -167,9 +181,10 @@ class LLMProcessor:
         """Build the prompt with system context, action log, and task data"""
         prompt = f"{SPOT_SYSTEM_PROMPT}\n\n"
         
-        # Get the latest vision and odometry logs
+        # Get the latest vision, odometry, and object detection logs
         latest_vision_log = self.spot_controller.get_vision_logs(1) if hasattr(self, 'spot_controller') and self.spot_controller else None
         latest_odometry_log = self.spot_controller.get_odometry_logs(1) if hasattr(self, 'spot_controller') and self.spot_controller else None
+        latest_object_detection_log = self.spot_controller.get_object_detection_logs(1) if hasattr(self, 'spot_controller') and self.spot_controller else None
         
         # Add action log if available
         if action_log and len(action_log) > 0:
@@ -206,6 +221,10 @@ class LLMProcessor:
         
         if latest_odometry_log:
             task_data["latest_odometry"] = latest_odometry_log
+            
+        if latest_object_detection_log and 'objects' in latest_object_detection_log:
+            # Add the latest detected objects to task_data
+            task_data["latest_detected_objects"] = latest_object_detection_log['objects']
         
         if task_data:
             prompt += f"Current task information:\n{json.dumps(task_data, indent=2)}\n\n"

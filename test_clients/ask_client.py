@@ -13,7 +13,7 @@ def ask_question_minimal(question: str, image_path: str = None, image_url: str =
         if image_path:
             if not os.path.exists(image_path): return {"error": f"File not found: {image_path}"}
             opened_file = open(image_path, 'rb')
-            files = {'image_file': (os.path.basename(image_path), opened_file)}
+            files = {'file': (os.path.basename(image_path), opened_file)}
         elif image_url:
             data['image_url'] = image_url
         else:

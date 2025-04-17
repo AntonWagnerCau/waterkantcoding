@@ -3,10 +3,7 @@ SpotAgent - Voice-controlled agent for Boston Dynamics Spot robot
 """
 import os
 import time
-import json
-import threading
 from dotenv import load_dotenv
-from datetime import datetime
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
 # Load environment variables
@@ -117,8 +114,8 @@ def main():
                     
                     if action == 'relative_move':
                         result = spot_controller.relative_move(
-                            params.get('forward_backward', 0) or 0, 
-                            params.get('left_right', 0) or 0
+                            params.get('x', 0) or 0, 
+                            params.get('y', 0) or 0
                         )
                         task_data["last_result"] = {"success": result}
                     
@@ -169,7 +166,6 @@ def main():
                             "odometry_logs": odometry_logs,
                             "vision_logs": vision_logs
                         }
-                    
                     elif action == 'task_complete':
                         # The LLM has decided the task is complete
                         task_complete = True

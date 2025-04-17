@@ -14,9 +14,11 @@ class PerceptionLogger:
         self.odometry_thread = None
         self.vision_thread = None
         self.terrain_thread = None
+        self.object_detection_thread = None  # New thread for object detection
         self.odometry_interval = float(os.getenv("ODOMETRY_INTERVAL", "0.2"))  # seconds
         self.vision_interval = float(os.getenv("VISION_INTERVAL", "0.5"))  # seconds
         self.terrain_interval = float(os.getenv("TERRAIN_INTERVAL", "0.5"))  # seconds
+        self.object_detection_interval = float(os.getenv("OBJECT_DETECTION_INTERVAL", "0.5"))  # seconds
         
         # Create logs directory if it doesn't exist
         self.logs_dir = "perception_logs"
@@ -27,6 +29,7 @@ class PerceptionLogger:
         self.odometry_log_path = os.path.join(self.logs_dir, f"odometry_{timestamp}.jsonl")
         self.vision_log_path = os.path.join(self.logs_dir, f"vision_{timestamp}.jsonl")
         self.terrain_log_path = os.path.join(self.logs_dir, f"terrain_{timestamp}.jsonl")
+        self.object_detection_log_path = os.path.join(self.logs_dir, f"objects_{timestamp}.jsonl")  # New log file
         
         print(f"Perception logs will be saved to: {self.logs_dir}")
     
@@ -53,6 +56,11 @@ class PerceptionLogger:
         #self.terrain_thread.daemon = True
         #self.terrain_thread.start()
         
+        # Start object detection thread
+        self.object_detection_thread = threading.Thread(target=self._object_detection_loop)
+        self.object_detection_thread.daemon = True
+        self.object_detection_thread.start()
+        
         print("Perception logging started")
     
     def stop(self):
@@ -72,6 +80,9 @@ class PerceptionLogger:
             
         if self.terrain_thread and self.terrain_thread.is_alive():
             self.terrain_thread.join(timeout=2.0)
+        
+        if self.object_detection_thread and self.object_detection_thread.is_alive():
+            self.object_detection_thread.join(timeout=2.0)
             
         print("Perception logging stopped")
     
@@ -317,3 +328,46 @@ class PerceptionLogger:
                 "roughness": f"Terrain roughness is {roughness:.3f}m ({difficulty})"
             }
         }
+
+    def _object_detection_loop(self):
+        """Background loop for object detection"""
+        print(f"Object detection logging started, interval: {self.object_detection_interval}s")
+        
+        while self.running:
+            try:
+                # Run locate_objects_in_view method to detect and localize objects
+                objects, error = self.spot_controller.locate_objects_in_view()
+                
+                # Create the detection results object
+                if error:
+                    detection_data = {
+                        "status": "error",
+                        "error": error
+                    }
+                else:
+                    # Filter out low confidence detections
+                    filtered_objects = []
+                    for obj in objects:
+                        # Include objects with score > 0.4
+                        if obj.get('score', 0) > 0.4:
+                            filtered_objects.append(obj)
+                    
+                    detection_data = {
+                        "status": "success",
+                        "objects": filtered_objects,
+                        "object_count": len(filtered_objects)
+                    }
+                
+                # Log the object detection data
+                self._log_data(self.object_detection_log_path, detection_data)
+                
+            except Exception as e:
+                print(f"Error in object detection loop: {e}")
+                # Log the error
+                self._log_data(self.object_detection_log_path, {
+                    "status": "error",
+                    "error": str(e)
+                })
+                
+            # Sleep for the configured interval
+            time.sleep(self.object_detection_interval)

@@ -13,7 +13,7 @@ CHANNELS = 1
 RATE = 16000
 CHUNK = 1024
 SILENCE_THRESHOLD = 500  # Adjusted based on your environment
-SILENCE_DURATION = 3  # seconds of silence to stop recording
+SILENCE_DURATION = 1.5  # seconds of silence to stop recording
 
 class AudioProcessor:
     """Handles microphone input and speech-to-text conversion using offline Whisper"""

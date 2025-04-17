@@ -11,9 +11,15 @@ from bosdyn.client.lease import LeaseClient
 from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.client.robot_command import RobotCommandClient, RobotCommandBuilder
 from bosdyn.client.image import ImageClient, build_image_request
-from bosdyn.client.frame_helpers import get_vision_tform_body
+from bosdyn.client.frame_helpers import get_vision_tform_body, VISION_FRAME_NAME, BODY_FRAME_NAME
+from bosdyn.client import frame_helpers
+from bosdyn.client import ray_cast
+from bosdyn.api import geometry_pb2
 import io
 from utils.timestamp_utils import parse_timestamp
+from perception_utils import ObjectDetector
+from bosdyn.client.ray_cast import RayCastClient
+from bosdyn.api import ray_cast_pb2
 
 class SpotController:
     """Controls the Boston Dynamics Spot robot"""
@@ -38,6 +44,13 @@ class SpotController:
         self.vision_model = None
         self.vision_processor = None
         
+        # Initialize object detector
+        self.object_detector = None
+        
+        self._image_client = None
+        self._ray_cast_client = None
+        self.yolo_api_url = os.getenv("YOLO_API_URL", "http://134.245.232.230:8002")  # Default local address
+        
     def connect(self):
         """Connect to the Spot robot"""
         try:
@@ -59,14 +72,21 @@ class SpotController:
             self.state_client : RobotStateClient = self.robot.ensure_client(RobotStateClient.default_service_name)
             self.image_client : ImageClient = self.robot.ensure_client(ImageClient.default_service_name)
             
+            # Initialize the object detector with the image client
+            self.object_detector = ObjectDetector(self.image_client)
+            
             # Power on the robot
             self.robot.power_on(timeout_sec=20)
             assert self.robot.is_powered_on(), "Robot power on failed"
             
+            self._image_client = self.robot.ensure_client(ImageClient.default_service_name)
+            self._ray_cast_client = self.robot.ensure_client(RayCastClient.default_service_name)
+            print("Image and RayCast clients created.")
+            
             self.connected = True
             return True
         except Exception as e:
-            print(f"Failed to connect to Spot: {e}")
+            print(f"Error during connection or client creation: {e}")
             return False
     
     def get_odometry(self):
@@ -140,7 +160,7 @@ class SpotController:
                         response = requests.post(
                             url,    
                             files = {
-                            "image_file": (f.name, f, guess_type(image_path)[0] or "image/jpeg")
+                            "file": (f.name, f, guess_type(image_path)[0] or "image/jpeg")
                             }
                         )
   
@@ -154,8 +174,7 @@ class SpotController:
                     vision_data.append({"description": description})
                 
             except Exception as e:
-                print(f"Error analyzing image with online vision model: {e}")
-                vision_data = {"description": f"Image analysis failed due to an error: {str(e)}"}
+                vision_data = {"description": f"Image captioning currently unavailable"}
     
         return vision_data
     
@@ -604,4 +623,337 @@ class SpotController:
             
         except Exception as e:
             print(f"Error retrieving terrain logs: {e}")
+            return {"error": str(e)}
+
+    def locate_objects_in_view(self, target_frame=frame_helpers.VISION_FRAME_NAME):
+        """
+        Captures images from all cameras, detects objects using YOLO, and locates them in 3D space.
+        
+        Args:
+            target_frame (str): The frame to report object locations in.
+            
+        Returns:
+            tuple: (located_objects, error_message)
+                   located_objects: List of objects with 3D positions, or None on error.
+                   error_message: String description of the error, or None on success.
+        """
+        
+        # All available camera sources
+        camera_sources = [
+            "frontleft_fisheye_image", 
+            "frontright_fisheye_image", 
+            "left_fisheye_image", 
+            "right_fisheye_image", 
+            "back_fisheye_image"
+        ]
+        
+        all_located_objects = []
+        
+        for camera_source in camera_sources:
+            
+            # 1. Get Image and Metadata
+            image_response, error = self.get_image_and_metadata(camera_source)
+            if error:
+                print(f"Error getting image from {camera_source}: {error}. Skipping this camera.")
+                continue
+                
+            # 2. Detect Objects via YOLO
+            detections, error = self.detect_objects_in_image(image_response)
+            if error:
+                print(f"Error detecting objects in {camera_source}: {error}. Skipping this camera.")
+                continue
+                
+            if not detections:
+                continue
+                
+            # 3. Project Detections to 3D
+            located_objects, error = self.get_object_locations(detections, image_response, target_frame)
+            if error:
+                print(f"Error locating objects in 3D from {camera_source}: {error}. Skipping this camera.")
+                continue
+                
+            # Add source camera information to each object
+            for obj in located_objects:
+                obj['source_camera'] = camera_source
+                
+            # Add to aggregated results
+            all_located_objects.extend(located_objects)
+            
+        # Summarize results
+        if all_located_objects:
+            # Group by label
+            label_counts = {}
+            for obj in all_located_objects:
+                label = obj['label']
+                if label in label_counts:
+                    label_counts[label] += 1
+                else:
+                    label_counts[label] = 1
+                    
+            summary = ", ".join([f"{count} {label}{'s' if count > 1 else ''}" for label, count in label_counts.items()])
+            return all_located_objects, None
+        else:
+            return [], None  # Return empty list, not an error
+
+    def get_image_and_metadata(self, source_name="frontleft_fisheye_image"):
+        """
+        Captures an image from a specified source along with its metadata.
+
+        Args:
+            source_name (str): The name of the image source (e.g., 'frontleft_fisheye_image').
+
+        Returns:
+            tuple: (image_response, error_message)
+                   image_response: The ImageResponse object from the SDK, or None on error.
+                   error_message: String description of the error, or None on success.
+        """
+        if not self._image_client:
+            return None, "Image client not initialized."
+        try:
+            # Request an uncompressed RGB image
+            image_request = build_image_request(
+                source_name, 
+                quality_percent=100,
+                image_format=image_pb2.Image.FORMAT_JPEG,
+                pixel_format=image_pb2.Image.PIXEL_FORMAT_RGB_U8
+            )
+
+            image_responses = self._image_client.get_image([image_request])
+
+            if len(image_responses) < 1:
+                return None, "No image received from robot."
+
+            image_response = image_responses[0]  # Assuming one source requested
+
+            # Check for basic validity (has shot, transform snapshot, intrinsics)
+            if not image_response.shot.transforms_snapshot:
+                return None, f"Image source {source_name} missing transform snapshot."
+            if not image_response.source.pinhole:
+                return None, f"Image source {source_name} missing pinhole camera intrinsics."
+
+            return image_response, None
+
+        except Exception as e:
+            return None, f"Error getting image from {source_name}: {e}"
+    
+    def detect_objects_in_image(self, image_response):
+        """
+        Sends image data to the YOLO API and returns detections.
+
+        Args:
+            image_response: The ImageResponse object containing image data.
+
+        Returns:
+            tuple: (list_of_detections, error_message)
+                   list_of_detections: A list of dicts [{'label': str, 'score': float, 'box': [x_min, y_min, x_max, y_max]}, ...], 
+                   or None on error.
+                   error_message: String description of the error, or None on success.
+        """
+        if not image_response or not image_response.shot.image.data:
+            return None, "Invalid image_response provided."
+
+        try:
+            
+            # For RAW format, we'd need to convert to a recognizable image format
+            # In a production system, we'd decode the RAW format based on its properties
+            # For simplicity in this example, we'll assume the YOLO API can handle common formats
+            image_bytes = io.BytesIO(image_response.shot.image.data)
+            
+            files = {'file': ('image.jpg', image_bytes, 'image/jpeg')}  # Adjust filename/mimetype as needed
+            params = {'threshold': 0.5}  # Adjust threshold as needed
+
+            start_time = time.time()
+            response = requests.post(f"{self.yolo_api_url}/detect", files=files, params=params, timeout=10)
+            end_time = time.time()
+
+            response.raise_for_status()  # Raise an exception for bad status codes
+
+            results = response.json()
+            detections = results.get("detections", [])
+
+            # Basic validation of detection format
+            validated_detections = []
+            for det in detections:
+                if isinstance(det, dict) and 'label' in det and 'score' in det and 'box' in det and len(det['box']) == 4:
+                    validated_detections.append(det)
+                else:
+                    print(f"Warning: Skipping invalid detection format: {det}")
+
+            return validated_detections, None
+
+        except requests.exceptions.RequestException as e:
+            return None, f"Error calling YOLO API: {e}"
+        except ValueError as e:  # Includes JSONDecodeError
+            return None, f"Error decoding JSON response from YOLO API: {e}"
+        except Exception as e:
+            return None, f"Unexpected error during YOLO detection: {e}"
+    
+    def get_object_locations(self, detections, image_response, target_frame_name=frame_helpers.BODY_FRAME_NAME):
+        """
+        Projects 2D detection bounding box centers to 3D points using ray casting.
+
+        Args:
+            detections (list): List of detections [{'label':..., 'score':..., 'box':...}, ...].
+            image_response: The ImageResponse containing metadata (transforms, camera).
+            target_frame_name (str): The desired frame for the 3D points.
+
+        Returns:
+            tuple: (located_objects, error_message)
+                   located_objects: List of dicts with 3D positions added, or None on error.
+                   error_message: String description of the error, or None on success.
+        """
+        if not self._ray_cast_client:
+            return None, "RayCast client not initialized."
+        if not detections or not image_response:
+            return None, "Missing detections or image_response."
+
+        located_objects = []
+        transforms_snapshot = image_response.shot.transforms_snapshot
+        camera_intrinsics = image_response.source.pinhole.intrinsics
+        frame_name_image_sensor = image_response.shot.frame_name_image_sensor
+
+        try:
+            # Get transform from camera to target frame
+            camera_tform_target = frame_helpers.get_a_tform_b(
+                transforms_snapshot,
+                frame_name_image_sensor,
+                target_frame_name
+            )
+            
+            if not camera_tform_target:
+                return None, f"Could not get transform from {frame_name_image_sensor} to {target_frame_name}"
+            
+            # Get target tform camera (inverse transform)
+            target_tform_camera = camera_tform_target.inverse()
+            
+            # Camera position in target frame
+            camera_position = target_tform_camera.get_translation()
+            
+            # Ray cast intersection types (empty = all types)
+            raycast_types = []
+            
+            # Cache camera name for debugging
+            camera_name = frame_name_image_sensor
+            
+            for detection in detections:
+                box = detection['box']  # [x_min, y_min, x_max, y_max]
+                center_px_x = (box[0] + box[2]) / 2
+                center_px_y = (box[1] + box[3]) / 2
+                
+                # Calculate normalized coordinates using camera intrinsics
+                focal_x = camera_intrinsics.focal_length.x
+                focal_y = camera_intrinsics.focal_length.y
+                principal_x = camera_intrinsics.principal_point.x
+                principal_y = camera_intrinsics.principal_point.y
+                
+                norm_x = (center_px_x - principal_x) / focal_x
+                norm_y = (center_px_y - principal_y) / focal_y
+                
+                # Create ray direction in camera frame
+                # For pinhole camera, Z is forward, X is right, Y is down
+                ray_dir_camera = np.array([norm_x, norm_y, 1.0])
+                
+                # Normalize the ray direction
+                ray_dir_camera = ray_dir_camera / np.linalg.norm(ray_dir_camera)
+                
+                # Important: Use ONLY the rotation component to transform the direction vector
+                # This is critical for correctly handling camera orientations
+                # The SE3Pose rotation component can be accessed via the .rotation property
+                ray_dir_target = target_tform_camera.rotation.transform_point(
+                    ray_dir_camera[0], ray_dir_camera[1], ray_dir_camera[2]
+                )
+                
+                # Make sure the direction is normalized
+                magnitude = np.sqrt(ray_dir_target[0]**2 + ray_dir_target[1]**2 + ray_dir_target[2]**2)
+                ray_dir_target = [
+                    ray_dir_target[0]/magnitude,
+                    ray_dir_target[1]/magnitude, 
+                    ray_dir_target[2]/magnitude
+                ]
+                
+                try:
+                    # Cast the ray from camera position along the transformed direction
+                    ray_results = self._ray_cast_client.raycast(
+                        ray_origin=camera_position,
+                        ray_direction=ray_dir_target,
+                        raycast_types=raycast_types,
+                        frame_name=target_frame_name
+                    )
+                    
+                    if not ray_results.hits:
+                        continue
+                        
+                    # Get the closest hit
+                    hit = ray_results.hits[0]
+                    hit_position = hit.hit_position_in_hit_frame
+                    
+                    # Add to located objects
+                    located_objects.append({
+                        'label': detection['label'],
+                        'score': detection['score'],
+                        'box': detection['box'],
+                        'position': {
+                            'x': hit_position.x,
+                            'y': hit_position.y,
+                            'z': hit_position.z
+                        },
+                        'hit_type': hit.type,
+                        'source_camera': camera_name
+                    })
+                except Exception as e:
+                    print(f"Error ray casting for object '{detection['label']}' from {camera_name}: {e}")
+                    continue
+
+            return located_objects, None
+
+        except Exception as e:
+            return None, f"Error during 2D-to-3D projection: {e}"
+
+    def get_object_detection_logs(self, seconds=1):
+        """Retrieve recent object detection logs
+        
+        Args:
+            seconds: Number of seconds to look back for object detection logs
+            
+        Returns:
+            Dictionary with most recent object detection entries
+        """
+        logs_dir = "perception_logs"
+        
+        if not os.path.exists(logs_dir):
+            return {"error": "No object detection logs found"}
+        
+        result = {}
+        current_time = time.time()
+        
+        try:
+            # Get object detection logs
+            object_logs = sorted(
+                [f for f in os.listdir(logs_dir) if f.startswith('objects_')],
+                reverse=True
+            )
+            
+            if object_logs:
+                latest_log = object_logs[0]
+                log_path = os.path.join(logs_dir, latest_log)
+                
+                # Read the last 'count' lines based on seconds parameter
+                with open(log_path, 'r') as f:
+                    lines = f.readlines()
+                    entries = []
+                    # Since object detection is less frequent, we need fewer entries
+                    # Assuming 1 entry per 1-2 seconds
+                    for line in lines[-seconds:]:
+                        entry = json.loads(line)
+                        # Add time_ago field to each entry
+                        if 'timestamp' in entry:
+                            timestamp = parse_timestamp(entry['timestamp'], current_time)
+                            entry['time_ago'] = round(current_time - timestamp, 1)
+                        entries.append(entry)
+                    result['objects'] = entries
+                    
+            return result
+            
+        except Exception as e:
+            print(f"Error retrieving object detection logs: {e}")
             return {"error": str(e)}
