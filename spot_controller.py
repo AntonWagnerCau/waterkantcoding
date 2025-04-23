@@ -683,7 +683,6 @@ class SpotController:
                 # 1. Get Original Image and Metadata
                 image_response, error = self.get_image_and_metadata(camera_source)
                 if error or not image_response: # Check image_response explicitly
-                    print(f"Error getting image/metadata {camera_source}: {error}. Skipping.")
                     continue
                 
                 original_image_data = image_response.shot.image # Keep original proto
@@ -705,13 +704,11 @@ class SpotController:
                         pil_image_rotated = pil_image_rotated.rotate(rotation_angle, expand=True)
                         
                 except Exception as img_proc_err:
-                     print(f"Error processing/rotating image {camera_source}: {img_proc_err}. Skipping.")
                      continue
 
                 # 3. Detect Objects on the Rotated Image
                 detections, error = self.detect_objects_in_image(pil_image_rotated)
                 if error:
-                    print(f"Error detecting objects on rotated {camera_source}: {error}. Skipping.")
                     continue
                 if not detections:
                     if return_images:
@@ -935,8 +932,6 @@ class SpotController:
             for det in detections:
                 if isinstance(det, dict) and 'label' in det and 'score' in det and 'box' in det and len(det['box']) == 4:
                     validated_detections.append(det)
-                else:
-                    print(f"Warning: Skipping invalid detection format: {det}")
 
             return validated_detections, None
 

@@ -229,22 +229,6 @@ def main():
         spot_connected = False
         schedule_state_update({"status": "Simulation Mode (No Config)"})
     
-    # Initialize odometry and vision data at startup to ensure frontend has initial data
-    try:
-        print("Initializing odometry data...")
-        initial_odometry = spot_controller.get_odometry()
-        if initial_odometry:
-            print(f"Initial odometry data: {initial_odometry}")
-            schedule_state_update({"odometry": initial_odometry})
-        
-        print("Initializing vision analysis...")
-        initial_vision = spot_controller.detect_objects_in_cameras()
-        if initial_vision:
-            print(f"Initial vision analysis: {initial_vision}")
-            schedule_state_update({"vision_analysis": initial_vision})
-    except Exception as e:
-        print(f"Error initializing data: {e}")
-    
     # Initialize the prompt logger
     prompt_logger = PromptLogger()
     
@@ -264,21 +248,17 @@ def main():
     try:
         schedule_state_update({"status": "Idle - Ready for command"}) 
         while True:
-            # Start recording for initial command
-            print("Ready for next command. Speak now...")
+            # Start recording for initial command if not already recording
+            if not audio_processor.is_recording:
+                print("Ready for next command. Speak now...")
+                schedule_state_update({"status": "Listening..."})
+                audio_processor.start_recording()
+            
+            # Check for transcription periodically
             schedule_state_update({"status": "Listening..."})
-            audio_processor.start_recording()
-            
-            # Wait for recording to finish
-            while audio_processor.is_recording:
-                time.sleep(0.1)
-            
-            schedule_state_update({"status": "Transcribing..."})
-            # Get transcription
             text = audio_processor.get_transcription()
-            
-            # Process with LLM and start task execution loop
             if text:
+                print(f"Transcription received: {text}")
                 schedule_state_update({"status": "Processing Command", "current_task_prompt": text})
                 # Reset conversation for new task
                 llm_processor.reset_conversation()
@@ -419,10 +399,11 @@ def main():
                     "task_reason": final_reason
                 }) 
             else:
-                 schedule_state_update({"status": "Idle - Ready for command"}) # Update status if no text heard
+                schedule_state_update({"status": "Idle - Ready for command"}) # Update status if no text heard
+                time.sleep(0.5)  # Brief pause before checking again
             
-            # Slight pause before listening again
-            time.sleep(0.5)
+            # Slight pause before checking transcription again
+            time.sleep(0.1)
     
     except KeyboardInterrupt:
         print("Interrupted by user")
