@@ -4,7 +4,7 @@ import time
 import os
 import json
 import bosdyn.api.image_pb2 as image_pb2
-from PIL import Image
+from PIL import Image, ImageDraw
 from mimetypes import guess_type
 from bosdyn.client import create_standard_sdk
 from bosdyn.client.lease import LeaseClient
@@ -17,9 +17,31 @@ from bosdyn.client import ray_cast
 from bosdyn.api import geometry_pb2
 import io
 from utils.timestamp_utils import parse_timestamp
-from perception_utils import ObjectDetector
 from bosdyn.client.ray_cast import RayCastClient
 from bosdyn.api import ray_cast_pb2
+import math # Import math for degrees conversion
+
+# Helper function for coordinate transformation
+def transform_point_for_rotation(px, py, orig_w, orig_h, rot_w, rot_h, angle_deg):
+    """Transforms a point from rotated image coords back to original image coords."""
+    # Center coordinates relative to image center
+    cx_rot = px - rot_w / 2.0
+    cy_rot = py - rot_h / 2.0
+
+    # Inverse rotation angle in radians
+    angle_rad = math.radians(-angle_deg) # Negative angle for inverse
+    cos_a = math.cos(angle_rad)
+    sin_a = math.sin(angle_rad)
+
+    # Apply inverse rotation matrix
+    cx_orig_rel = cx_rot * cos_a - cy_rot * sin_a
+    cy_orig_rel = cx_rot * sin_a + cy_rot * cos_a
+
+    # Convert back to top-left origin coordinates in the original frame
+    cx_orig = cx_orig_rel + orig_w / 2.0
+    cy_orig = cy_orig_rel + orig_h / 2.0
+
+    return cx_orig, cy_orig
 
 class SpotController:
     """Controls the Boston Dynamics Spot robot"""
@@ -29,7 +51,6 @@ class SpotController:
         self.command_client = None
         self.state_client = None
         self.image_client = None
-        self.last_image_path = None
         self.position = {"x": 0.0, "y": 0.0, "z": 0.0}
         self.orientation = {"roll": 0.0, "pitch": 0.0, "yaw": 0.0}
         
@@ -47,92 +68,96 @@ class SpotController:
         # Initialize object detector
         self.object_detector = None
         
-        self._image_client = None
-        self._ray_cast_client = None
-        self.yolo_api_url = os.getenv("YOLO_API_URL", "http://134.245.232.230:8002")  # Default local address
+        self.image_client = None
+        self.ray_cast_client = None
+        self.yolo_api_url = os.getenv("YOLO_API_URL", "http://127.0.0.1:8002") # Default local address if YOLO service runs locally
         
     def connect(self):
         """Connect to the Spot robot"""
         try:
-            # Initialize the SDK
             sdk = create_standard_sdk("SpotAgentClient")
-            self.robot = sdk.create_robot(os.getenv("SPOT_IP"))
+            spot_ip = os.getenv("SPOT_IP")
+            if not spot_ip:
+                print("Error: SPOT_IP environment variable not set.")
+                return False
+            self.robot = sdk.create_robot(spot_ip)
             
-            self.robot.authenticate(os.getenv("SPOT_USERNAME"), os.getenv("SPOT_PASSWORD"))
+            username = os.getenv("SPOT_USERNAME")
+            password = os.getenv("SPOT_PASSWORD")
+            if not username or not password:
+                 print("Error: SPOT_USERNAME or SPOT_PASSWORD environment variables not set.")
+                 return False
+            self.robot.authenticate(username, password)
             
-            # Sync with the robot's time
             self.robot.time_sync.wait_for_sync()
             
-            # Acquire lease
             self.lease_client : LeaseClient = self.robot.ensure_client('lease')
             self.lease = self.lease_client.take()
             
-            # Get command clients
             self.command_client : RobotCommandClient = self.robot.ensure_client(RobotCommandClient.default_service_name)
             self.state_client : RobotStateClient = self.robot.ensure_client(RobotStateClient.default_service_name)
             self.image_client : ImageClient = self.robot.ensure_client(ImageClient.default_service_name)
-            
-            # Initialize the object detector with the image client
-            self.object_detector = ObjectDetector(self.image_client)
-            
-            # Power on the robot
+            self.ray_cast_client : RayCastClient = self.robot.ensure_client(RayCastClient.default_service_name)
+            print("Base clients created.")
+
             self.robot.power_on(timeout_sec=20)
             assert self.robot.is_powered_on(), "Robot power on failed"
-            
-            self._image_client = self.robot.ensure_client(ImageClient.default_service_name)
-            self._ray_cast_client = self.robot.ensure_client(RayCastClient.default_service_name)
-            print("Image and RayCast clients created.")
-            
+            print("Robot powered on.")
+
             self.connected = True
+            print(f"Successfully connected to Spot at {spot_ip}")
             return True
         except Exception as e:
-            print(f"Error during connection or client creation: {e}")
+            print(f"Error connecting to Spot: {e}")
+            self.connected = False
             return False
     
     def get_odometry(self):
-        """Retrieve the robot's current position and orientation"""
+        """Retrieve the robot's current position and orientation (in degrees)."""
+        # In simulation mode, just return the last known/simulated state
         if not self.connected:
-            # Return simulated data in simulation mode
-            odometry_data = {
+            return {
                 "position": self.position,
-                "orientation": self.orientation
+                "orientation": self.orientation # Assume simulated orientation is already in degrees if needed
             }
-        else:
-            try:
-                # Get robot state
-                robot_state = self.state_client.get_robot_state()
-                
-                state = get_vision_tform_body(robot_state.kinematic_state.transforms_snapshot)
-                position = state.position
-                self.position = {
-                    "x": position.x, 
-                    "y": position.y, 
-                    "z": position.z
-                }
-                
-                rotation = state.rotation
-                self.orientation = {
-                    "roll": rotation.to_roll(),
-                    "pitch": rotation.to_pitch(),
-                    "yaw": rotation.to_yaw()
-                }
-                
-                odometry_data = {
-                    "position": self.position,
-                    "orientation": self.orientation
-                }
-            except Exception as e:
-                print(f"Error getting odometry: {e}")
-                # Return the last known position in case of error
-                odometry_data = {
-                    "position": self.position,
-                    "orientation": self.orientation
-                }
-        
-        return odometry_data
+            
+        try:
+            robot_state = self.state_client.get_robot_state()
+            kinematic_state = robot_state.kinematic_state
+            transforms = kinematic_state.transforms_snapshot
+            
+            # Get the transform from vision frame to body frame
+            vision_tform_body = frame_helpers.get_vision_tform_body(transforms)
+            
+            # Extract position
+            pos = vision_tform_body.position
+            current_position = {"x": pos.x, "y": pos.y, "z": pos.z}
+            
+            # Extract rotation (quaternion) and convert roll, pitch, yaw to degrees
+            rot = vision_tform_body.rotation
+            current_orientation = {
+                "roll": math.degrees(rot.to_roll()),
+                "pitch": math.degrees(rot.to_pitch()),
+                "yaw": math.degrees(rot.to_yaw())
+            }
+            
+            # Update internal state (optional, depending on if simulation uses it)
+            self.position = current_position
+            self.orientation = current_orientation 
+            
+            return {
+                "position": current_position,
+                "orientation": current_orientation # Now in degrees
+            }
+            
+        except Exception as e:
+            print(f"Error getting odometry: {e}")
+            # Return the last known state in case of error
+            return {
+                "position": self.position,
+                "orientation": self.orientation 
+            }
     
-
-        
     def analyze_images(self):
         """Capture images and generate a caption of what the robot sees"""
 
@@ -625,75 +650,214 @@ class SpotController:
             print(f"Error retrieving terrain logs: {e}")
             return {"error": str(e)}
 
-    def locate_objects_in_view(self, target_frame=frame_helpers.VISION_FRAME_NAME):
+    def locate_objects_in_view(self, target_frame=frame_helpers.BODY_FRAME_NAME, return_images=False):
         """
-        Captures images from all cameras, detects objects using YOLO, and locates them in 3D space.
-        
+        Captures images, rotates for upright view, detects objects on rotated image,
+        projects detections back to original frame for 3D localization, 
+        and optionally returns rotated annotated images.
+
         Args:
-            target_frame (str): The frame to report object locations in.
-            
+            target_frame (str): The frame to report 3D object locations in (e.g., body).
+            return_images (bool): Whether to return annotated images (rotated) with bounding boxes.
+
         Returns:
-            tuple: (located_objects, error_message)
-                   located_objects: List of objects with 3D positions, or None on error.
-                   error_message: String description of the error, or None on success.
+            If return_images=False:
+                tuple: (list_of_objects, error_message) # Objects contain label, score, 3D position
+            If return_images=True:
+                dict: {
+                    'objects': list_of_objects_with_3D_pos,
+                    'images': dict {camera_name: {'annotated_image': rotated_pil_image_with_boxes }},
+                    'error': error message (if any)
+                }
         """
-        
-        # All available camera sources
         camera_sources = [
-            "frontleft_fisheye_image", 
-            "frontright_fisheye_image", 
-            "left_fisheye_image", 
-            "right_fisheye_image", 
-            "back_fisheye_image"
+            "frontleft_fisheye_image", "frontright_fisheye_image", 
+            "left_fisheye_image", "right_fisheye_image", "back_fisheye_image"
         ]
         
-        all_located_objects = []
+        all_located_objects = [] # Store final objects with 3D positions
+        images_for_return = {} if return_images else None
         
-        for camera_source in camera_sources:
-            
-            # 1. Get Image and Metadata
-            image_response, error = self.get_image_and_metadata(camera_source)
-            if error:
-                print(f"Error getting image from {camera_source}: {error}. Skipping this camera.")
-                continue
+        try:
+            for camera_source in camera_sources:
+                # 1. Get Original Image and Metadata
+                image_response, error = self.get_image_and_metadata(camera_source)
+                if error or not image_response: # Check image_response explicitly
+                    print(f"Error getting image/metadata {camera_source}: {error}. Skipping.")
+                    continue
                 
-            # 2. Detect Objects via YOLO
-            detections, error = self.detect_objects_in_image(image_response)
-            if error:
-                print(f"Error detecting objects in {camera_source}: {error}. Skipping this camera.")
-                continue
-                
-            if not detections:
-                continue
-                
-            # 3. Project Detections to 3D
-            located_objects, error = self.get_object_locations(detections, image_response, target_frame)
-            if error:
-                print(f"Error locating objects in 3D from {camera_source}: {error}. Skipping this camera.")
-                continue
-                
-            # Add source camera information to each object
-            for obj in located_objects:
-                obj['source_camera'] = camera_source
-                
-            # Add to aggregated results
-            all_located_objects.extend(located_objects)
-            
-        # Summarize results
-        if all_located_objects:
-            # Group by label
-            label_counts = {}
-            for obj in all_located_objects:
-                label = obj['label']
-                if label in label_counts:
-                    label_counts[label] += 1
-                else:
-                    label_counts[label] = 1
+                original_image_data = image_response.shot.image # Keep original proto
+                orig_w = original_image_data.cols
+                orig_h = original_image_data.rows
+                rotation_angle = 0 # Default no rotation
+
+                # 2. Create PIL Image & Apply Rotation for Detection View
+                try:
+                    pil_image_rotated = Image.open(io.BytesIO(original_image_data.data))
                     
-            summary = ", ".join([f"{count} {label}{'s' if count > 1 else ''}" for label, count in label_counts.items()])
-            return all_located_objects, None
-        else:
-            return [], None  # Return empty list, not an error
+                    if camera_source == "frontleft_fisheye_image" or camera_source == "frontright_fisheye_image":
+                        rotation_angle = -90
+                    elif camera_source == "right_fisheye_image":
+                        rotation_angle = 180
+                    # Add other rotations if needed
+                    
+                    if rotation_angle != 0:
+                        pil_image_rotated = pil_image_rotated.rotate(rotation_angle, expand=True)
+                        
+                except Exception as img_proc_err:
+                     print(f"Error processing/rotating image {camera_source}: {img_proc_err}. Skipping.")
+                     continue
+
+                # 3. Detect Objects on the Rotated Image
+                detections, error = self.detect_objects_in_image(pil_image_rotated)
+                if error:
+                    print(f"Error detecting objects on rotated {camera_source}: {error}. Skipping.")
+                    continue
+                if not detections:
+                    if return_images:
+                         images_for_return[camera_source] = {'annotated_image': pil_image_rotated}
+                    continue # Skip 3D projection if no detections
+
+                # Prepare annotated image if requested (draw on rotated)
+                annotated_image = None
+                if return_images:
+                    try:
+                        annotated_image = pil_image_rotated.copy() # Draw on the rotated copy
+                        draw = ImageDraw.Draw(annotated_image)
+                        for detection in detections:
+                            box = detection.get('box', [0, 0, 0, 0])
+                            label = detection.get('label', 'unknown')
+                            score = detection.get('score', 0.0)
+                            draw.rectangle(box, outline='lime', width=3)
+                            text = f"{label} ({score:.2f})"
+                            text_pos = (box[0] + 3, box[1] + 3)
+                            if box[1] > 15: text_pos = (box[0] + 3, box[1] - 15)
+                            draw.text(text_pos, text, fill='lime')
+                        images_for_return[camera_source] = {'annotated_image': annotated_image}
+                    except Exception as draw_err:
+                        print(f"Error drawing boxes on {camera_source}: {draw_err}")
+                        if camera_source not in images_for_return:
+                             images_for_return[camera_source] = {'annotated_image': pil_image_rotated}
+
+                # 4. Project to 3D using Inverse Coordinate Transform
+                rot_w, rot_h = pil_image_rotated.size
+                for det in detections:
+                    box_rot = det['box']
+                    center_x_rot = (box_rot[0] + box_rot[2]) / 2.0
+                    center_y_rot = (box_rot[1] + box_rot[3]) / 2.0
+                    
+                    # Transform center point back to original image coordinates
+                    center_x_orig, center_y_orig = transform_point_for_rotation(
+                        center_x_rot, center_y_rot, 
+                        orig_w, orig_h, rot_w, rot_h, rotation_angle
+                    )
+                    
+                    # 5. Perform Ray Casting using original coordinates and metadata
+                    hit_point_3d = self._project_pixel_to_3d(center_x_orig, center_y_orig, image_response, target_frame)
+                    
+                    if hit_point_3d:
+                        all_located_objects.append({
+                            'label': det['label'],
+                            'score': det['score'],
+                            # 'box_rotated': box_rot, # Box relative to rotated image (optional)
+                            'position': { # 3D position in target_frame
+                                'x': hit_point_3d.x,
+                                'y': hit_point_3d.y,
+                                'z': hit_point_3d.z
+                            },
+                            # 'hit_type': hit_point_3d.type, # If _project_pixel returns full hit
+                            'source_camera': camera_source 
+                        })
+            
+            # 6. Return based on flag
+            if return_images:
+                return {
+                    'objects': all_located_objects, # Now contains 3D positions
+                    'images': images_for_return # Contains rotated, annotated PIL images
+                }
+            else:
+                # Original tuple format, but objects now have 3D positions
+                return all_located_objects, None 
+                
+        except Exception as e:
+            error_msg = f"Critical Error in locate_objects_in_view: {e}"
+            print(error_msg)
+            # Add traceback for debugging critical errors
+            import traceback
+            traceback.print_exc()
+            if return_images:
+                return {'error': error_msg}
+            else:
+                return [], error_msg # Original return format for error
+
+    def _project_pixel_to_3d(self, px, py, image_response, target_frame_name):
+        """Helper function to project a single pixel coordinate to 3D using ray casting."""
+        if not self.ray_cast_client:
+            print("RayCast client not initialized.")
+            return None
+        if not image_response:
+             print("Missing image_response for 3D projection.")
+             return None
+             
+        transforms_snapshot = image_response.shot.transforms_snapshot
+        camera_intrinsics = image_response.source.pinhole.intrinsics
+        frame_name_image_sensor = image_response.shot.frame_name_image_sensor
+
+        try:
+            camera_tform_target = frame_helpers.get_a_tform_b(
+                transforms_snapshot, frame_name_image_sensor, target_frame_name)
+            if not camera_tform_target:
+                 print(f"Could not get transform from {frame_name_image_sensor} to {target_frame_name}")
+                 return None
+            
+            target_tform_camera = camera_tform_target.inverse()
+            camera_position = target_tform_camera.get_translation()
+            
+            # Calculate ray direction in camera frame using intrinsics
+            focal_x = camera_intrinsics.focal_length.x
+            focal_y = camera_intrinsics.focal_length.y
+            principal_x = camera_intrinsics.principal_point.x
+            principal_y = camera_intrinsics.principal_point.y
+            
+            # Check for zero focal length
+            if focal_x == 0 or focal_y == 0:
+                print(f"Warning: Zero focal length detected for {frame_name_image_sensor}. Cannot project.")
+                return None
+                
+            norm_x = (px - principal_x) / focal_x
+            norm_y = (py - principal_y) / focal_y
+            ray_dir_camera = np.array([norm_x, norm_y, 1.0])
+            ray_dir_camera /= np.linalg.norm(ray_dir_camera)
+            
+            # Transform ray direction to target frame using ONLY rotation
+            ray_dir_target = target_tform_camera.rotation.transform_point(
+                ray_dir_camera[0], ray_dir_camera[1], ray_dir_camera[2])
+            
+            # Normalize target direction vector
+            magnitude = np.linalg.norm(ray_dir_target)
+            if magnitude == 0:
+                 print("Warning: Zero magnitude ray direction after transform.")
+                 return None
+            ray_dir_target_normalized = [d / magnitude for d in ray_dir_target]
+
+            # Cast the ray
+            ray_results = self.ray_cast_client.raycast(
+                ray_origin=camera_position,
+                ray_direction=ray_dir_target_normalized,
+                frame_name=target_frame_name,
+                raycast_types=[]
+            )
+                
+            if ray_results.hits:
+                # Return the 3D position of the closest hit
+                return ray_results.hits[0].hit_position_in_hit_frame 
+            else:
+                # No hit found
+                return None
+                
+        except Exception as e:
+            print(f"Error during ray casting for pixel ({px},{py}) in {frame_name_image_sensor}: {e}")
+            return None
 
     def get_image_and_metadata(self, source_name="frontleft_fisheye_image"):
         """
@@ -707,8 +871,8 @@ class SpotController:
                    image_response: The ImageResponse object from the SDK, or None on error.
                    error_message: String description of the error, or None on success.
         """
-        if not self._image_client:
-            return None, "Image client not initialized."
+        if not self.image_client:
+            return Nne, "Image client not initialized."
         try:
             # Request an uncompressed RGB image
             image_request = build_image_request(
@@ -718,8 +882,7 @@ class SpotController:
                 pixel_format=image_pb2.Image.PIXEL_FORMAT_RGB_U8
             )
 
-            image_responses = self._image_client.get_image([image_request])
-
+            image_responses = self.image_client.get_image([image_request])
             if len(image_responses) < 1:
                 return None, "No image received from robot."
 
@@ -736,12 +899,12 @@ class SpotController:
         except Exception as e:
             return None, f"Error getting image from {source_name}: {e}"
     
-    def detect_objects_in_image(self, image_response):
+    def detect_objects_in_image(self, pil_image):
         """
         Sends image data to the YOLO API and returns detections.
 
         Args:
-            image_response: The ImageResponse object containing image data.
+            pil_image: The PIL Image object containing image data.
 
         Returns:
             tuple: (list_of_detections, error_message)
@@ -749,17 +912,13 @@ class SpotController:
                    or None on error.
                    error_message: String description of the error, or None on success.
         """
-        if not image_response or not image_response.shot.image.data:
-            return None, "Invalid image_response provided."
 
         try:
             
-            # For RAW format, we'd need to convert to a recognizable image format
-            # In a production system, we'd decode the RAW format based on its properties
-            # For simplicity in this example, we'll assume the YOLO API can handle common formats
-            image_bytes = io.BytesIO(image_response.shot.image.data)
-            
-            files = {'file': ('image.jpg', image_bytes, 'image/jpeg')}  # Adjust filename/mimetype as needed
+            img_bytes = io.BytesIO()
+            pil_image.save(img_bytes, format="JPEG", quality=100)
+            img_bytes = img_bytes.getvalue()
+            files = {'file': ('image.jpg', img_bytes, 'image/jpeg')}  # Adjust filename/mimetype as needed
             params = {'threshold': 0.5}  # Adjust threshold as needed
 
             start_time = time.time()
@@ -788,127 +947,6 @@ class SpotController:
         except Exception as e:
             return None, f"Unexpected error during YOLO detection: {e}"
     
-    def get_object_locations(self, detections, image_response, target_frame_name=frame_helpers.BODY_FRAME_NAME):
-        """
-        Projects 2D detection bounding box centers to 3D points using ray casting.
-
-        Args:
-            detections (list): List of detections [{'label':..., 'score':..., 'box':...}, ...].
-            image_response: The ImageResponse containing metadata (transforms, camera).
-            target_frame_name (str): The desired frame for the 3D points.
-
-        Returns:
-            tuple: (located_objects, error_message)
-                   located_objects: List of dicts with 3D positions added, or None on error.
-                   error_message: String description of the error, or None on success.
-        """
-        if not self._ray_cast_client:
-            return None, "RayCast client not initialized."
-        if not detections or not image_response:
-            return None, "Missing detections or image_response."
-
-        located_objects = []
-        transforms_snapshot = image_response.shot.transforms_snapshot
-        camera_intrinsics = image_response.source.pinhole.intrinsics
-        frame_name_image_sensor = image_response.shot.frame_name_image_sensor
-
-        try:
-            # Get transform from camera to target frame
-            camera_tform_target = frame_helpers.get_a_tform_b(
-                transforms_snapshot,
-                frame_name_image_sensor,
-                target_frame_name
-            )
-            
-            if not camera_tform_target:
-                return None, f"Could not get transform from {frame_name_image_sensor} to {target_frame_name}"
-            
-            # Get target tform camera (inverse transform)
-            target_tform_camera = camera_tform_target.inverse()
-            
-            # Camera position in target frame
-            camera_position = target_tform_camera.get_translation()
-            
-            # Ray cast intersection types (empty = all types)
-            raycast_types = []
-            
-            # Cache camera name for debugging
-            camera_name = frame_name_image_sensor
-            
-            for detection in detections:
-                box = detection['box']  # [x_min, y_min, x_max, y_max]
-                center_px_x = (box[0] + box[2]) / 2
-                center_px_y = (box[1] + box[3]) / 2
-                
-                # Calculate normalized coordinates using camera intrinsics
-                focal_x = camera_intrinsics.focal_length.x
-                focal_y = camera_intrinsics.focal_length.y
-                principal_x = camera_intrinsics.principal_point.x
-                principal_y = camera_intrinsics.principal_point.y
-                
-                norm_x = (center_px_x - principal_x) / focal_x
-                norm_y = (center_px_y - principal_y) / focal_y
-                
-                # Create ray direction in camera frame
-                # For pinhole camera, Z is forward, X is right, Y is down
-                ray_dir_camera = np.array([norm_x, norm_y, 1.0])
-                
-                # Normalize the ray direction
-                ray_dir_camera = ray_dir_camera / np.linalg.norm(ray_dir_camera)
-                
-                # Important: Use ONLY the rotation component to transform the direction vector
-                # This is critical for correctly handling camera orientations
-                # The SE3Pose rotation component can be accessed via the .rotation property
-                ray_dir_target = target_tform_camera.rotation.transform_point(
-                    ray_dir_camera[0], ray_dir_camera[1], ray_dir_camera[2]
-                )
-                
-                # Make sure the direction is normalized
-                magnitude = np.sqrt(ray_dir_target[0]**2 + ray_dir_target[1]**2 + ray_dir_target[2]**2)
-                ray_dir_target = [
-                    ray_dir_target[0]/magnitude,
-                    ray_dir_target[1]/magnitude, 
-                    ray_dir_target[2]/magnitude
-                ]
-                
-                try:
-                    # Cast the ray from camera position along the transformed direction
-                    ray_results = self._ray_cast_client.raycast(
-                        ray_origin=camera_position,
-                        ray_direction=ray_dir_target,
-                        raycast_types=raycast_types,
-                        frame_name=target_frame_name
-                    )
-                    
-                    if not ray_results.hits:
-                        continue
-                        
-                    # Get the closest hit
-                    hit = ray_results.hits[0]
-                    hit_position = hit.hit_position_in_hit_frame
-                    
-                    # Add to located objects
-                    located_objects.append({
-                        'label': detection['label'],
-                        'score': detection['score'],
-                        'box': detection['box'],
-                        'position': {
-                            'x': hit_position.x,
-                            'y': hit_position.y,
-                            'z': hit_position.z
-                        },
-                        'hit_type': hit.type,
-                        'source_camera': camera_name
-                    })
-                except Exception as e:
-                    print(f"Error ray casting for object '{detection['label']}' from {camera_name}: {e}")
-                    continue
-
-            return located_objects, None
-
-        except Exception as e:
-            return None, f"Error during 2D-to-3D projection: {e}"
-
     def get_object_detection_logs(self, seconds=1):
         """Retrieve recent object detection logs
         

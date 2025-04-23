@@ -12,8 +12,8 @@ FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 16000
 CHUNK = 1024
-SILENCE_THRESHOLD = 500  # Adjusted based on your environment
-SILENCE_DURATION = 1.5  # seconds of silence to stop recording
+SILENCE_THRESHOLD = 800  # Adjusted based on your environment
+SILENCE_DURATION = 2.5  # seconds of silence to stop recording
 
 class AudioProcessor:
     """Handles microphone input and speech-to-text conversion using offline Whisper"""
@@ -29,8 +29,7 @@ class AudioProcessor:
         compute_type = os.getenv("WHISPER_COMPUTE_TYPE", "float32")
         print(f"Loading Whisper model '{model_size}' (this may take a moment)...")
         
-        # Use CPU by default, but you can set device="cuda" if you have a GPU
-        self.model = WhisperModel(model_size, device="cpu", compute_type=compute_type)
+        self.model = WhisperModel(model_size, device="cuda", compute_type=compute_type)
         print("Whisper model loaded successfully")
         
     def start_recording(self):

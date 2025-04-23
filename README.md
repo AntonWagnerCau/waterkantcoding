@@ -4,11 +4,12 @@ A voice-controlled agent for Boston Dynamics Spot robot. This application uses c
 
 1. Captures voice input from your microphone
 2. Converts speech to text using OpenAI's Whisper (runs offline)
-3. Processes commands with a local LLM via Ollama
+3. Processes commands with a local LLM via Ollama/Google/Openrouter
 4. Controls a Boston Dynamics Spot robot based on user voice commands
 
 ## Setup
 
+Skip 1, 2, 6 if not running LLM locally
 1. Install Ollama from https://ollama.com/
 
 2. Pull a language model (Mistral recommended for balance of performance and quality):
@@ -51,8 +52,3 @@ Speak commands into your microphone to control the Spot robot. Examples:
 - "Turn right 90 degrees"
 - "Sit down"
 - "Stand up"
-- "Take a picture"
-
-## Requirements
-
-This application works offline without any API keys or paid services! Whisper runs locally on your CPU, with optional GPU acceleration if available. 

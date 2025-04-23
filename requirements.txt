@@ -6,4 +6,9 @@ bosdyn-client>=3.3.0
 bosdyn-api>=3.3.0
 python-dotenv>=1.0.0
 ollama>=0.1.5
-requests>=2.31.0 
+requests>=2.31.0
+Pillow
+google-generativeai
+pydantic
+fastapi
+uvicorn[standard] 

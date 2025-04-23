@@ -5,20 +5,24 @@ import json
 import numpy as np
 from spot_controller import SpotController
 from datetime import datetime
+import io
+import base64
+from PIL import Image # Make sure PIL is imported
 
 class PerceptionLogger:
     """Runs odometry and vision perception in background and logs data to files"""
-    def __init__(self, spot_controller : SpotController):
+    def __init__(self, spot_controller : SpotController, state_update_callback=None):
         self.spot_controller = spot_controller
+        self.state_update_callback = state_update_callback  # Add callback for state updates
         self.running = False
         self.odometry_thread = None
-        self.vision_thread = None
+        self.vision_thread = None # Keep for legacy vision logging if needed
         self.terrain_thread = None
         self.object_detection_thread = None  # New thread for object detection
-        self.odometry_interval = float(os.getenv("ODOMETRY_INTERVAL", "0.2"))  # seconds
-        self.vision_interval = float(os.getenv("VISION_INTERVAL", "0.5"))  # seconds
-        self.terrain_interval = float(os.getenv("TERRAIN_INTERVAL", "0.5"))  # seconds
-        self.object_detection_interval = float(os.getenv("OBJECT_DETECTION_INTERVAL", "0.5"))  # seconds
+        self.odometry_interval = float(os.getenv("ODOMETRY_INTERVAL", "0"))
+        self.vision_interval = float(os.getenv("VISION_INTERVAL", "0"))
+        self.terrain_interval = float(os.getenv("TERRAIN_INTERVAL", "0"))
+        self.object_detection_interval = float(os.getenv("OBJECT_DETECTION_INTERVAL", "0"))
         
         # Create logs directory if it doesn't exist
         self.logs_dir = "perception_logs"
@@ -27,11 +31,16 @@ class PerceptionLogger:
         # Set up log file paths with ISO timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.odometry_log_path = os.path.join(self.logs_dir, f"odometry_{timestamp}.jsonl")
-        self.vision_log_path = os.path.join(self.logs_dir, f"vision_{timestamp}.jsonl")
+        self.vision_log_path = os.path.join(self.logs_dir, f"vision_{timestamp}.jsonl") # For legacy
         self.terrain_log_path = os.path.join(self.logs_dir, f"terrain_{timestamp}.jsonl")
-        self.object_detection_log_path = os.path.join(self.logs_dir, f"objects_{timestamp}.jsonl")  # New log file
+        self.object_detection_log_path = os.path.join(self.logs_dir, f"objects_{timestamp}.jsonl")
+        
+        # Remove annotated image saving setup
+        # self.annotated_image_dir = "images/annotated"
+        # os.makedirs(self.annotated_image_dir, exist_ok=True)
         
         print(f"Perception logs will be saved to: {self.logs_dir}")
+        # print(f"Annotated images will be saved to: {self.annotated_image_dir}") # Removed
     
     def start(self):
         """Start background perception threads"""
@@ -66,23 +75,21 @@ class PerceptionLogger:
     def stop(self):
         """Stop background perception threads"""
         if not self.running:
-            print("Perception logging not running")
+            # print("Perception logging not running") # Reduce noise
             return
             
+        print("Stopping perception logging...")
         self.running = False
+        threads_to_join = [
+            self.odometry_thread, 
+            self.vision_thread, 
+            self.terrain_thread, 
+            self.object_detection_thread
+        ]
         
-        # Wait for threads to terminate
-        if self.odometry_thread and self.odometry_thread.is_alive():
-            self.odometry_thread.join(timeout=2.0)
-        
-        if self.vision_thread and self.vision_thread.is_alive():
-            self.vision_thread.join(timeout=2.0)
-            
-        if self.terrain_thread and self.terrain_thread.is_alive():
-            self.terrain_thread.join(timeout=2.0)
-        
-        if self.object_detection_thread and self.object_detection_thread.is_alive():
-            self.object_detection_thread.join(timeout=2.0)
+        for thread in threads_to_join:
+             if thread and thread.is_alive():
+                 thread.join(timeout=2.0)
             
         print("Perception logging stopped")
     
@@ -95,36 +102,47 @@ class PerceptionLogger:
                 "data": data
             }
             
+            # Need custom serializer for non-serializable data if any (e.g., numpy arrays if not converted)
+            def default_serializer(obj):
+                if isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                # Add other non-serializable types here if needed
+                raise TypeError(f'Object of type {obj.__class__.__name__} is not JSON serializable')
+
             # Append JSON line to file
             with open(file_path, "a") as f:
-                f.write(json.dumps(timestamped_data) + "\n")
+                # Use default serializer to handle potential numpy arrays etc.
+                f.write(json.dumps(timestamped_data, default=default_serializer) + "\n")
                 
         except Exception as e:
-            print(f"Error logging data: {e}")
+            # Avoid spamming logs if file logging itself fails repeatedly
+            # Consider adding a counter or rate limiting here
+            print(f"Error logging data to {os.path.basename(file_path)}: {e}")
     
     def _odometry_loop(self):
         """Background loop for odometry perception"""
-        print(f"Odometry logging started, interval: {self.odometry_interval}s")
-        
         while self.running:
+            start_time = time.time()
             try:
-                # Get odometry data with caching disabled for background logging
                 odometry_data = self.spot_controller.get_odometry()
-                
-                # Log the data
-                self._log_data(self.odometry_log_path, odometry_data)
-                
+                if odometry_data:
+                    self._log_data(self.odometry_log_path, odometry_data)
+                    # Send update via callback if available
+                    if self.state_update_callback:
+                        self.state_update_callback({"odometry": odometry_data})
             except Exception as e:
                 print(f"Error in odometry loop: {e}")
-                
-            # Sleep for the configured interval
-            time.sleep(self.odometry_interval)
+            
+            # Sleep accounting for processing time
+            elapsed = time.time() - start_time
+            sleep_time = max(0, self.odometry_interval - elapsed)
+            if self.running: # Check again before sleeping
+                time.sleep(sleep_time)
     
     def _vision_loop(self):
-        """Background loop for vision perception"""
-        print(f"Vision logging started, interval: {self.vision_interval}s")
-        
+        """Background loop for legacy vision perception"""
         while self.running:
+            start_time = time.time()
             try:
                 # Get vision data with caching disabled for background logging
                 vision_data = self.spot_controller.analyze_images()
@@ -135,28 +153,94 @@ class PerceptionLogger:
             except Exception as e:
                 print(f"Error in vision loop: {e}")
                 
-            # Sleep for the configured interval
-            time.sleep(self.vision_interval)
-            
-    def _terrain_loop(self):
-        """Background loop for terrain analysis"""
-        print(f"Terrain logging started, interval: {self.terrain_interval}s")
-        
-        while self.running:
-            try:
-                # Get terrain data from controller
-                terrain_data = self.analyze_terrain()
-                
-                if terrain_data:
-                    # Log the data
-                    self._log_data(self.terrain_log_path, terrain_data)
-                
-            except Exception as e:
-                print(f"Error in terrain loop: {e}")
-                
-            # Sleep for the configured interval
-            time.sleep(self.terrain_interval)
+            # Sleep accounting for processing time
+            elapsed = time.time() - start_time
+            sleep_time = max(0, self.vision_interval - elapsed)
+            if self.running: # Check again before sleeping
+                time.sleep(sleep_time)
     
+    def _object_detection_loop(self):
+        """Background loop for object detection with Base64 image transfer."""
+        while self.running:
+            start_time = time.time()
+            detection_data = None # Define outside try block
+            try:
+                if self.spot_controller.connected:
+                    # Request images along with object locations
+                    results = self.spot_controller.locate_objects_in_view(return_images=True)
+                    
+                    if results and 'error' not in results:
+                        objects = results.get('objects', [])
+                        images_data = results.get('images', {})
+                        error = None
+                        
+                        # Process images: Encode to Base64
+                        base64_images = {}
+                        for camera_name, img_info in images_data.items():
+                            annotated_image = img_info.get('annotated_image')
+                            if annotated_image and isinstance(annotated_image, Image.Image):
+                                try:
+                                    buffer = io.BytesIO()
+                                    # Save PIL Image to buffer as JPEG
+                                    annotated_image.save(buffer, format="JPEG", quality=85) # Adjust quality as needed
+                                    buffer.seek(0)
+                                    img_bytes = buffer.read()
+                                    # Encode bytes to Base64 string
+                                    base64_str = base64.b64encode(img_bytes).decode('utf-8')
+                                    base64_images[camera_name] = base64_str
+                                except Exception as encode_err:
+                                    print(f"Error encoding image {camera_name}: {encode_err}") # Keep actual errors
+                            else:
+                                # Keep warning for missing images
+                                print(f"Warning: No valid annotated image found for {camera_name}")
+                        
+
+                        # Prepare data payload for logging and WebSocket
+                        detection_data = {
+                            "status": "success",
+                            "objects": objects,
+                            "object_count": len(objects),
+                            "base64_images": base64_images # Send Base64 images
+                        }
+                        
+                    else: # Handle error from locate_objects_in_view
+                        error = results.get('error') if results else "Unknown error locating objects"
+                        print(f"Object detection failed: {error}") # Keep actual errors
+                        detection_data = {"status": "error", "error": str(error)}
+                
+                else: # Spot not connected
+                    # print("[_object_detection_loop] Spot not connected") # REMOVED DEBUG
+                    detection_data = {"status": "error", "error": "Spot not connected"}
+
+                # Send update via callback (if data was prepared)
+                if detection_data and self.state_update_callback:
+                    # print("[_object_detection_loop] Sending object_detection update via callback.") # REMOVED DEBUG
+                    self.state_update_callback({"object_detection": detection_data})
+                # elif not self.state_update_callback:
+                #      print("[_object_detection_loop] State update callback not available.") # REMOVED DEBUG
+            
+                # Log the data (even if error state)
+                if detection_data:
+                     # Summarize base64 data for logs
+                     log_payload = detection_data.copy()
+                     if "base64_images" in log_payload and isinstance(log_payload["base64_images"], dict):
+                          log_payload["base64_images"] = {cam: f"<base64_len_{len(data)}...>" for cam, data in log_payload["base64_images"].items()}
+                     self._log_data(self.object_detection_log_path, log_payload)
+
+            except Exception as e:
+                # Keep critical error logging
+                print(f"Critical Error in object detection loop: {e}")
+                error_payload = {"status": "error", "error": f"Loop error: {str(e)}"}
+                self._log_data(self.object_detection_log_path, error_payload)
+                if self.state_update_callback:
+                     self.state_update_callback({"object_detection": error_payload})
+
+            # Sleep accounting for processing time
+            elapsed = time.time() - start_time
+            sleep_time = max(0, self.object_detection_interval - elapsed)
+            if self.running:
+                time.sleep(sleep_time)
+
     def analyze_terrain(self):
         """Analyze terrain height grid data around the robot
         
@@ -328,46 +412,3 @@ class PerceptionLogger:
                 "roughness": f"Terrain roughness is {roughness:.3f}m ({difficulty})"
             }
         }
-
-    def _object_detection_loop(self):
-        """Background loop for object detection"""
-        print(f"Object detection logging started, interval: {self.object_detection_interval}s")
-        
-        while self.running:
-            try:
-                # Run locate_objects_in_view method to detect and localize objects
-                objects, error = self.spot_controller.locate_objects_in_view()
-                
-                # Create the detection results object
-                if error:
-                    detection_data = {
-                        "status": "error",
-                        "error": error
-                    }
-                else:
-                    # Filter out low confidence detections
-                    filtered_objects = []
-                    for obj in objects:
-                        # Include objects with score > 0.4
-                        if obj.get('score', 0) > 0.4:
-                            filtered_objects.append(obj)
-                    
-                    detection_data = {
-                        "status": "success",
-                        "objects": filtered_objects,
-                        "object_count": len(filtered_objects)
-                    }
-                
-                # Log the object detection data
-                self._log_data(self.object_detection_log_path, detection_data)
-                
-            except Exception as e:
-                print(f"Error in object detection loop: {e}")
-                # Log the error
-                self._log_data(self.object_detection_log_path, {
-                    "status": "error",
-                    "error": str(e)
-                })
-                
-            # Sleep for the configured interval
-            time.sleep(self.object_detection_interval)

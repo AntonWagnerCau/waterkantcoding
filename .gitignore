@@ -22,3 +22,7 @@ spot_image_*.jpg
 .DS_Store
 Thumbs.db 
 
+node_modules
+*.png
+*.jpg
+/images

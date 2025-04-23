@@ -27,7 +27,6 @@ Each object has these properties:
 - label: The type of object detected (e.g., "person", "chair", "bottle")
 - score: The confidence level (0-1) that the object was correctly identified
 - position: 3D coordinates relative to the robot's body frame {x, y, z}
-- source_camera: Which of the robot's cameras detected the object
 
 
 Available actions:
@@ -171,7 +170,6 @@ class LLMProcessor:
             # List available models
             models = self.google_client.models.list()
             model_names = [model.name for model in models]
-            print(f"Available Google models: {', '.join(model_names)}")
         except Exception as e:
             print(f"Warning: Could not check Google API model availability: {e}")
             
@@ -195,8 +193,6 @@ class LLMProcessor:
                     prompt += f"Task started with command: {entry.get('command')}{time_ago}.\n"
                     prompt += "So far you've done this:\n" if len(action_log) > 1 else "So far no actions have been taken\n"
                 elif entry.get("event_type") == "action":
-                    if i < len(action_log) - 3:
-                        continue
                     timestamp = parse_timestamp(entry.get('timestamp'))
                     time_ago = f" was taken {round(time.time() - timestamp, 1)} seconds ago"
                     prompt += f"Action {i}: {entry.get('action')}{time_ago}.\n"
