@@ -160,18 +160,19 @@ class PerceptionLogger:
                 time.sleep(sleep_time)
     
     def _object_detection_loop(self):
-        """Background loop for object detection with Base64 image transfer."""
+        """Background loop for object detection with Base64 image transfer and camera details."""
         while self.running:
             start_time = time.time()
             detection_data = None # Define outside try block
             try:
                 if self.spot_controller.connected:
-                    # Request images along with object locations
+                    # Request images, object locations, and camera details
                     results = self.spot_controller.locate_objects_in_view(return_images=True)
                     
                     if results and 'error' not in results:
                         objects = results.get('objects', [])
                         images_data = results.get('images', {})
+                        camera_details = results.get('camera_details', {}) # Get camera details
                         error = None
                         
                         # Process images: Encode to Base64
@@ -182,7 +183,7 @@ class PerceptionLogger:
                                 try:
                                     buffer = io.BytesIO()
                                     # Save PIL Image to buffer as JPEG
-                                    annotated_image.save(buffer, format="JPEG", quality=85) # Adjust quality as needed
+                                    annotated_image.save(buffer, format="JPEG", quality=100) # Adjust quality as needed
                                     buffer.seek(0)
                                     img_bytes = buffer.read()
                                     # Encode bytes to Base64 string
@@ -194,23 +195,23 @@ class PerceptionLogger:
                                 # Keep warning for missing images
                                 print(f"Warning: No valid annotated image found for {camera_name}")
                         
-
                         # Prepare data payload for logging and WebSocket
                         detection_data = {
                             "status": "success",
                             "objects": objects,
                             "object_count": len(objects),
-                            "base64_images": base64_images # Send Base64 images
+                            "base64_images": base64_images, # Send Base64 images
+                            "camera_details": camera_details # Send camera details
                         }
                         
                     else: # Handle error from locate_objects_in_view
                         error = results.get('error') if results else "Unknown error locating objects"
                         print(f"Object detection failed: {error}") # Keep actual errors
-                        detection_data = {"status": "error", "error": str(error)}
+                        detection_data = {"status": "error", "error": str(error), "camera_details": results.get('camera_details', {})}
                 
                 else: # Spot not connected
                     # print("[_object_detection_loop] Spot not connected") # REMOVED DEBUG
-                    detection_data = {"status": "error", "error": "Spot not connected"}
+                    detection_data = {"status": "error", "error": "Spot not connected", "camera_details": {}}
 
                 # Send update via callback (if data was prepared)
                 if detection_data and self.state_update_callback:
@@ -221,16 +222,18 @@ class PerceptionLogger:
             
                 # Log the data (even if error state)
                 if detection_data:
-                     # Summarize base64 data for logs
+                     # Summarize base64 data and camera details for logs
                      log_payload = detection_data.copy()
                      if "base64_images" in log_payload and isinstance(log_payload["base64_images"], dict):
                           log_payload["base64_images"] = {cam: f"<base64_len_{len(data)}...>" for cam, data in log_payload["base64_images"].items()}
+                     if "camera_details" in log_payload and isinstance(log_payload["camera_details"], dict):
+                          log_payload["camera_details"] = {cam: "<details...>" for cam in log_payload["camera_details"]}
                      self._log_data(self.object_detection_log_path, log_payload)
 
             except Exception as e:
                 # Keep critical error logging
                 print(f"Critical Error in object detection loop: {e}")
-                error_payload = {"status": "error", "error": f"Loop error: {str(e)}"}
+                error_payload = {"status": "error", "error": f"Loop error: {str(e)}", "camera_details": {}}
                 self._log_data(self.object_detection_log_path, error_payload)
                 if self.state_update_callback:
                      self.state_update_callback({"object_detection": error_payload})

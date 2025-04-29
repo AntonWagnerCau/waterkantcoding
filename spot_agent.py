@@ -49,9 +49,10 @@ class ConnectionManager:
         self.lock = asyncio.Lock()
 
     async def connect(self, websocket: WebSocket):
-        await websocket.accept()
         async with self.lock:
+            await websocket.accept()
             self.active_connections.append(websocket)
+            print(f"New connection established. Total connections: {len(self.active_connections)}")
 
     def disconnect(self, websocket: WebSocket):
         try:

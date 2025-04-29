@@ -265,7 +265,7 @@ const Dashboard = () => {
             {/* Column 2: Object Detection & Odometry */} 
             <div className="grid-column column-2">
                  {/* Object Detection Display Component - Takes significant space */} 
-                 <ObjectDetectionDisplay objectDetection={objectDetection} />
+                 <ObjectDetectionDisplay objectDetection={objectDetection} odometry={odometry} />
                  
                  {/* Odometry panel */}
                  <div className="panel odometry-panel">

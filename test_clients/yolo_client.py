@@ -55,4 +55,4 @@ def test_yolos_api(image_path, api_url="http://134.245.232.230:8002"):
 
 if __name__ == "__main__":
     
-    test_yolos_api("images/spot_image_back_fisheye_image_1744272034.jpg") 
+    test_yolos_api("test.png") 

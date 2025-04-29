@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import ThreeDVisualization from './ThreeDVisualization';
 
 // Assuming helper functions or context might be used for consistent styling later
 // For now, we rely on CSS classes defined in index.css
 
-const ObjectDetectionDisplay = ({ objectDetection }) => {
+const ObjectDetectionDisplay = ({ objectDetection, odometry }) => {
   const [enlargedImage, setEnlargedImage] = useState(null);
 
   const formatCameraName = (name) => {
@@ -95,6 +96,11 @@ const ObjectDetectionDisplay = ({ objectDetection }) => {
         </div>
       </div>
       <div className="panel-body">
+        {/* 3D Visualization */}
+        <div className="three-d-visualization-container">
+          <h3>3D Visualization</h3>
+          <ThreeDVisualization objectDetection={objectDetection} odometry={odometry} />
+        </div>
         {/* Image Grid - Needs corresponding CSS in index.css */}
         <div className="camera-image-grid">
           {sortedImageKeys.length > 0 ? sortedImageKeys.map((camera) => (

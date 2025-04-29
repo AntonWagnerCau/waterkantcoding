@@ -10,7 +10,7 @@ from bosdyn.client import create_standard_sdk
 from bosdyn.client.lease import LeaseClient
 from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.client.robot_command import RobotCommandClient, RobotCommandBuilder
-from bosdyn.client.image import ImageClient, build_image_request
+from bosdyn.client.image import ImageClient, build_image_request, pixel_to_camera_space
 from bosdyn.client.frame_helpers import get_vision_tform_body, VISION_FRAME_NAME, BODY_FRAME_NAME
 from bosdyn.client import frame_helpers
 from bosdyn.client import ray_cast
@@ -70,7 +70,7 @@ class SpotController:
         
         self.image_client = None
         self.ray_cast_client = None
-        self.yolo_api_url = os.getenv("YOLO_API_URL", "http://127.0.0.1:8002") # Default local address if YOLO service runs locally
+        self.yolo_api_url = os.getenv("YOLO_API_URL", "http://134.245.232.230:8002")
         
     def connect(self):
         """Connect to the Spot robot"""
@@ -654,21 +654,19 @@ class SpotController:
         """
         Captures images, rotates for upright view, detects objects on rotated image,
         projects detections back to original frame for 3D localization, 
-        and optionally returns rotated annotated images.
+        returns object locations, optionally annotated images, and camera details.
 
         Args:
-            target_frame (str): The frame to report 3D object locations in (e.g., body).
+            target_frame (str): The frame to report 3D object locations and camera poses in (e.g., body).
             return_images (bool): Whether to return annotated images (rotated) with bounding boxes.
 
         Returns:
-            If return_images=False:
-                tuple: (list_of_objects, error_message) # Objects contain label, score, 3D position
-            If return_images=True:
-                dict: {
-                    'objects': list_of_objects_with_3D_pos,
-                    'images': dict {camera_name: {'annotated_image': rotated_pil_image_with_boxes }},
-                    'error': error message (if any)
-                }
+            dict: {
+                'objects': list_of_objects_with_3D_pos,
+                'images': dict {camera_name: {'annotated_image': rotated_pil_image_with_boxes }} (if return_images=True),
+                'camera_details': dict {camera_name: {'intrinsics': {...}, 'pose': {...}, 'dimensions': {...}}},
+                'error': error message (if any)
+            }
         """
         camera_sources = [
             "frontleft_fisheye_image", "frontright_fisheye_image", 
@@ -677,104 +675,166 @@ class SpotController:
         
         all_located_objects = [] # Store final objects with 3D positions
         images_for_return = {} if return_images else None
-        
+        camera_details = {} # Store camera pose and intrinsics
+
         try:
             for camera_source in camera_sources:
                 # 1. Get Original Image and Metadata
                 image_response, error = self.get_image_and_metadata(camera_source)
                 if error or not image_response: # Check image_response explicitly
+                    print(f"Skipping camera {camera_source} due to error: {error}")
                     continue
                 
+                # Extract camera details here, even if detection fails later
+                try:
+                    intrinsics = image_response.source.pinhole.intrinsics
+                    transforms = image_response.shot.transforms_snapshot
+                    frame_name_image_sensor = image_response.shot.frame_name_image_sensor
+                    
+                    # Get transform representing the sensor frame's pose IN the target (body) frame
+                    tform_sensor_in_body = frame_helpers.get_a_tform_b(transforms, target_frame, frame_name_image_sensor)
+                    
+                    if tform_sensor_in_body:
+                        pos = tform_sensor_in_body.position
+                        rot = tform_sensor_in_body.rotation # Quaternion
+                        
+                        camera_details[camera_source] = {
+                            'intrinsics': {
+                                'focal_length_x': intrinsics.focal_length.x,
+                                'focal_length_y': intrinsics.focal_length.y,
+                                'principal_point_x': intrinsics.principal_point.x,
+                                'principal_point_y': intrinsics.principal_point.y,
+                            },
+                            'pose': { # Pose of camera in target_frame (body)
+                                'position': {'x': pos.x, 'y': pos.y, 'z': pos.z},
+                                'rotation': {'w': rot.w, 'x': rot.x, 'y': rot.y, 'z': rot.z}
+                            },
+                            'dimensions': {
+                                'width': image_response.shot.image.cols,
+                                'height': image_response.shot.image.rows
+                            }
+                        }
+                    else:
+                        print(f"Warning: Could not get transform for {camera_source} to {target_frame}")
+
+                except Exception as cam_detail_err:
+                    print(f"Error extracting camera details for {camera_source}: {cam_detail_err}")
+                    # Continue processing the image for detection if possible
+
                 original_image_data = image_response.shot.image # Keep original proto
                 orig_w = original_image_data.cols
                 orig_h = original_image_data.rows
-                rotation_angle = 0 # Default no rotation
 
                 # 2. Create PIL Image & Apply Rotation for Detection View
                 try:
-                    pil_image_rotated = Image.open(io.BytesIO(original_image_data.data))
-                    
+                    pil_image_for_detection = Image.open(io.BytesIO(original_image_data.data))
+                    rotation_angle = 0 # Default no rotation
+
+                    # Determine rotation based on camera source
                     if camera_source == "frontleft_fisheye_image" or camera_source == "frontright_fisheye_image":
                         rotation_angle = -90
                     elif camera_source == "right_fisheye_image":
                         rotation_angle = 180
                     # Add other rotations if needed
-                    
+
+                    # Apply rotation if necessary
                     if rotation_angle != 0:
-                        pil_image_rotated = pil_image_rotated.rotate(rotation_angle, expand=True)
-                        
+                        pil_image_for_detection = pil_image_for_detection.rotate(rotation_angle, expand=True)
+
                 except Exception as img_proc_err:
-                     continue
+                     print(f"Error processing image for {camera_source}: {img_proc_err}")
+                     continue # Skip detection and projection for this camera
 
-                # 3. Detect Objects on the Rotated Image
-                detections, error = self.detect_objects_in_image(pil_image_rotated)
+                # 3. Detect Objects on the (potentially) Rotated Image
+                detections, error = self.detect_objects_in_image(pil_image_for_detection)
                 if error:
-                    continue
-                if not detections:
+                    print(f"Error detecting objects in {camera_source}: {error}")
+                    # If error and return_images, add the (potentially rotated) empty image
                     if return_images:
-                         images_for_return[camera_source] = {'annotated_image': pil_image_rotated}
-                    continue # Skip 3D projection if no detections
+                        images_for_return[camera_source] = {'annotated_image': pil_image_for_detection}
+                    continue
+                
+                # If no detections, add the (potentially rotated) empty image if needed and continue
+                if not detections and return_images:
+                    images_for_return[camera_source] = {'annotated_image': pil_image_for_detection}
+                    continue # No detections to project
 
-                # Prepare annotated image if requested (draw on rotated)
-                annotated_image = None
-                if return_images:
-                    try:
-                        annotated_image = pil_image_rotated.copy() # Draw on the rotated copy
-                        draw = ImageDraw.Draw(annotated_image)
-                        for detection in detections:
-                            box = detection.get('box', [0, 0, 0, 0])
-                            label = detection.get('label', 'unknown')
-                            score = detection.get('score', 0.0)
-                            draw.rectangle(box, outline='lime', width=3)
-                            text = f"{label} ({score:.2f})"
-                            text_pos = (box[0] + 3, box[1] + 3)
-                            if box[1] > 15: text_pos = (box[0] + 3, box[1] - 15)
-                            draw.text(text_pos, text, fill='lime')
-                        images_for_return[camera_source] = {'annotated_image': annotated_image}
-                    except Exception as draw_err:
-                        print(f"Error drawing boxes on {camera_source}: {draw_err}")
-                        if camera_source not in images_for_return:
-                             images_for_return[camera_source] = {'annotated_image': pil_image_rotated}
+                # Process detections if they exist
+                if detections:
+                    # Prepare annotated image for return (optional)
+                    if return_images:
+                        try:
+                            # Draw directly on the image used for detection (rotated)
+                            annotated_image_rotated = pil_image_for_detection.copy()
+                            draw = ImageDraw.Draw(annotated_image_rotated)
+                            for detection in detections:
+                                box = detection.get('box', [0, 0, 0, 0])
+                                label = detection.get('label', 'unknown')
+                                score = detection.get('score', 0.0)
+                                # Coordinates are relative to the image passed to detector
+                                draw.rectangle(box, outline='lime', width=3)
+                                text = f"{label} ({score:.2f})"
+                                text_pos = (box[0] + 3, box[1] + 3)
+                                if box[1] > 15: text_pos = (box[0] + 3, box[1] - 15)
+                                draw.text(text_pos, text, fill='lime')
+                            
+                            images_for_return[camera_source] = {'annotated_image': annotated_image_rotated}
 
-                # 4. Project to 3D using Inverse Coordinate Transform
-                rot_w, rot_h = pil_image_rotated.size
-                for det in detections:
-                    box_rot = det['box']
-                    center_x_rot = (box_rot[0] + box_rot[2]) / 2.0
-                    center_y_rot = (box_rot[1] + box_rot[3]) / 2.0
-                    
-                    # Transform center point back to original image coordinates
-                    center_x_orig, center_y_orig = transform_point_for_rotation(
-                        center_x_rot, center_y_rot, 
-                        orig_w, orig_h, rot_w, rot_h, rotation_angle
-                    )
-                    
-                    # 5. Perform Ray Casting using original coordinates and metadata
-                    hit_point_3d = self._project_pixel_to_3d(center_x_orig, center_y_orig, image_response, target_frame)
-                    
-                    if hit_point_3d:
-                        all_located_objects.append({
-                            'label': det['label'],
-                            'score': det['score'],
-                            # 'box_rotated': box_rot, # Box relative to rotated image (optional)
-                            'position': { # 3D position in target_frame
-                                'x': hit_point_3d.x,
-                                'y': hit_point_3d.y,
-                                'z': hit_point_3d.z
-                            },
-                            # 'hit_type': hit_point_3d.type, # If _project_pixel returns full hit
-                            'source_camera': camera_source 
-                        })
+                        except Exception as draw_err:
+                            print(f"Error drawing boxes on {camera_source}: {draw_err}")
+                            # Fallback to the unannotated (but potentially rotated) image used for detection
+                            if camera_source not in images_for_return:
+                                images_for_return[camera_source] = {'annotated_image': pil_image_for_detection}
+
+                    # 4. Project to 3D using coordinates transformed back to ORIGINAL frame
+                    rot_w, rot_h = pil_image_for_detection.size # Dimensions of the image used for detection
+                    for det in detections:
+                        box_rot = det['box'] # Box is relative to the image passed to detector
+                        # Center point in the rotated image's coordinate system
+                        center_x_rot = (box_rot[0] + box_rot[2]) / 2.0
+                        center_y_rot = (box_rot[1] + box_rot[3]) / 2.0
+                        
+                        # Transform center point back to original image coordinates
+                        if rotation_angle == -90:
+                            # Use CORRECTED direct formula for -90deg CW rotation with expand=True
+                            # px_orig = py_rot
+                            # py_orig = orig_h - px_rot
+                            center_x_orig = center_y_rot
+                            center_y_orig = orig_h - center_x_rot
+                        else:
+                            # Use the general function for other rotations (or 0)
+                            # WARNING: transform_point_for_rotation might be buggy for expand=True cases!
+                            center_x_orig, center_y_orig = transform_point_for_rotation(
+                                center_x_rot, center_y_rot,
+                                orig_w, orig_h, rot_w, rot_h, rotation_angle
+                            )
+
+                        # 5. Perform Ray Casting using the transformed ORIGINAL coordinates and metadata
+                        hit_point_3d = self._project_pixel_to_3d(center_x_orig, center_y_orig, image_response, target_frame)
+                        
+                        if hit_point_3d:
+                            all_located_objects.append({
+                                'label': det['label'],
+                                'score': det['score'],
+                                # 'box_rotated': box_rot, # Box relative to rotated image used for detection (optional)
+                                'position': { # 3D position in target_frame
+                                    'x': hit_point_3d.x,
+                                    'y': hit_point_3d.y,
+                                    'z': hit_point_3d.z
+                                },
+                                # 'hit_type': hit_point_3d.type, # If _project_pixel returns full hit
+                                'source_camera': camera_source 
+                            })
             
-            # 6. Return based on flag
+            # 6. Return structured dictionary
+            return_data = {
+                'objects': all_located_objects,
+                'camera_details': camera_details,
+            }
             if return_images:
-                return {
-                    'objects': all_located_objects, # Now contains 3D positions
-                    'images': images_for_return # Contains rotated, annotated PIL images
-                }
-            else:
-                # Original tuple format, but objects now have 3D positions
-                return all_located_objects, None 
+                return_data['images'] = images_for_return
+                
+            return return_data
                 
         except Exception as e:
             error_msg = f"Critical Error in locate_objects_in_view: {e}"
@@ -782,10 +842,8 @@ class SpotController:
             # Add traceback for debugging critical errors
             import traceback
             traceback.print_exc()
-            if return_images:
-                return {'error': error_msg}
-            else:
-                return [], error_msg # Original return format for error
+            # Return error structure
+            return {'error': error_msg, 'objects': [], 'images': {}, 'camera_details': {}}
 
     def _project_pixel_to_3d(self, px, py, image_response, target_frame_name):
         """Helper function to project a single pixel coordinate to 3D using ray casting."""
@@ -797,7 +855,7 @@ class SpotController:
              return None
              
         transforms_snapshot = image_response.shot.transforms_snapshot
-        camera_intrinsics = image_response.source.pinhole.intrinsics
+        image_source_proto = image_response.source # Use the ImageSource proto
         frame_name_image_sensor = image_response.shot.frame_name_image_sensor
 
         try:
@@ -810,21 +868,9 @@ class SpotController:
             target_tform_camera = camera_tform_target.inverse()
             camera_position = target_tform_camera.get_translation()
             
-            # Calculate ray direction in camera frame using intrinsics
-            focal_x = camera_intrinsics.focal_length.x
-            focal_y = camera_intrinsics.focal_length.y
-            principal_x = camera_intrinsics.principal_point.x
-            principal_y = camera_intrinsics.principal_point.y
-            
-            # Check for zero focal length
-            if focal_x == 0 or focal_y == 0:
-                print(f"Warning: Zero focal length detected for {frame_name_image_sensor}. Cannot project.")
-                return None
-                
-            norm_x = (px - principal_x) / focal_x
-            norm_y = (py - principal_y) / focal_y
-            ray_dir_camera = np.array([norm_x, norm_y, 1.0])
-            ray_dir_camera /= np.linalg.norm(ray_dir_camera)
+            # Calculate ray direction in camera frame using pixel_to_camera_space
+            # This returns a 3-tuple (x, y, z) in camera frame at 1m depth (direction vector)
+            ray_dir_camera = pixel_to_camera_space(image_source_proto, px, py)
             
             # Transform ray direction to target frame using ONLY rotation
             ray_dir_target = target_tform_camera.rotation.transform_point(
@@ -869,7 +915,7 @@ class SpotController:
                    error_message: String description of the error, or None on success.
         """
         if not self.image_client:
-            return Nne, "Image client not initialized."
+            return None, "Image client not initialized."
         try:
             # Request an uncompressed RGB image
             image_request = build_image_request(
@@ -916,7 +962,7 @@ class SpotController:
             pil_image.save(img_bytes, format="JPEG", quality=100)
             img_bytes = img_bytes.getvalue()
             files = {'file': ('image.jpg', img_bytes, 'image/jpeg')}  # Adjust filename/mimetype as needed
-            params = {'threshold': 0.5}  # Adjust threshold as needed
+            params = {'threshold': 0.75}  # Adjust threshold as needed
 
             start_time = time.time()
             response = requests.post(f"{self.yolo_api_url}/detect", files=files, params=params, timeout=10)

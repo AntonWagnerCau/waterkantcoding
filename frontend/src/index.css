@@ -1332,4 +1332,22 @@ button.active {
 /* Make sure panel body doesn't have excessive padding if content handles it */
 .object-detection-panel > .panel-body {
     padding: var(--spacing-medium); /* Adjust as needed */
+}
+
+/* Adding styles for 3D visualization container */
+.three-d-visualization-container {
+  margin-bottom: 1rem;
+  padding: 0.5rem;
+  background: var(--surface-dark);
+  border: 1px solid var(--primary);
+  border-radius: 4px;
+  box-shadow: 0 0 10px var(--primary-glow);
+}
+
+.three-d-visualization-container h3 {
+  margin-top: 0;
+  color: var(--primary);
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
 } 
