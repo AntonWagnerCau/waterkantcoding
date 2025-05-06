@@ -69,7 +69,7 @@ button.active {
   left: 0;
   right: 0;
   bottom: 0;
-  background: 
+  background:
     linear-gradient(transparent 97%, var(--primary) 97%, var(--primary) 100%),
     linear-gradient(90deg, transparent 97%, var(--primary) 97%, var(--primary) 100%);
   background-size: 40px 40px;
@@ -82,6 +82,7 @@ button.active {
   0% {
     background-position: 0 0;
   }
+
   100% {
     background-position: 40px 40px;
   }
@@ -182,7 +183,7 @@ button.active {
   .dashboard-grid {
     grid-template-columns: repeat(2, 1fr);
   }
-  
+
   .camera-panel {
     grid-column: span 2;
   }
@@ -192,7 +193,7 @@ button.active {
   .dashboard-grid {
     grid-template-columns: repeat(3, 1fr);
   }
-  
+
   .camera-panel {
     grid-column: span 2;
   }
@@ -209,7 +210,7 @@ button.active {
   .vision-grid {
     grid-template-columns: repeat(2, 1fr);
   }
-  
+
   .vision-analysis-panel {
     grid-column: span 2;
   }
@@ -239,7 +240,7 @@ button.active {
   .debug-grid {
     grid-template-columns: repeat(2, 1fr);
   }
-  
+
   .raw-data-panel {
     grid-column: span 2;
   }
@@ -381,6 +382,7 @@ button.active {
   0% {
     top: 0%;
   }
+
   100% {
     top: 100%;
   }
@@ -404,8 +406,15 @@ button.active {
 }
 
 @keyframes flicker {
-  0%, 100% { opacity: 0.7; }
-  50% { opacity: 0.3; }
+
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+
+  50% {
+    opacity: 0.3;
+  }
 }
 
 /* Task styling */
@@ -487,7 +496,8 @@ button.active {
   gap: 1rem;
 }
 
-.action-name, .action-thought {
+.action-name,
+.action-thought {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
@@ -623,14 +633,12 @@ button.active {
   align-items: center;
   color: var(--text-dim);
   font-size: 0.8rem;
-  background: 
-    repeating-linear-gradient(
-      45deg,
+  background:
+    repeating-linear-gradient(45deg,
       #111,
       #111 10px,
       #222 10px,
-      #222 20px
-    );
+      #222 20px);
 }
 
 /* Odometry panel */
@@ -640,13 +648,15 @@ button.active {
   gap: 1.5rem;
 }
 
-.position-data, .orientation-data {
+.position-data,
+.orientation-data {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
 
-.position-data h3, .orientation-data h3 {
+.position-data h3,
+.orientation-data h3 {
   margin: 0;
   font-size: 1rem;
   color: var(--primary);
@@ -895,9 +905,11 @@ button.active {
   0% {
     box-shadow: 0 0 0 0 var(--primary-glow);
   }
+
   70% {
     box-shadow: 0 0 0 10px rgba(0, 255, 255, 0);
   }
+
   100% {
     box-shadow: 0 0 0 0 rgba(0, 255, 255, 0);
   }
@@ -922,7 +934,7 @@ button.active {
   left: 0;
   right: 0;
   bottom: 0;
-  background: 
+  background:
     linear-gradient(transparent 97%, var(--primary) 97%, var(--primary) 100%),
     linear-gradient(90deg, transparent 97%, var(--primary) 97%, var(--primary) 100%);
   background-size: 40px 40px;
@@ -965,9 +977,11 @@ button.active {
   0% {
     box-shadow: 0 0 0 0 var(--primary-glow);
   }
+
   70% {
     box-shadow: 0 0 40px 10px var(--primary-glow);
   }
+
   100% {
     box-shadow: 0 0 0 0 var(--primary-glow);
   }
@@ -1007,6 +1021,7 @@ button.active {
   0% {
     width: 0%;
   }
+
   100% {
     width: 100%;
   }
@@ -1021,9 +1036,12 @@ button.active {
 }
 
 @keyframes blink {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.5;
   }
@@ -1070,9 +1088,12 @@ button.active {
 }
 
 @keyframes error-flicker {
-  0%, 100% {
+
+  0%,
+  100% {
     text-shadow: 0 0 20px rgba(255, 0, 0, 0.7);
   }
+
   50% {
     text-shadow: 0 0 40px rgba(255, 0, 0, 0.9);
   }
@@ -1108,149 +1129,230 @@ button.active {
    ========================================== */
 
 .dashboard-mode .dashboard-header {
-    /* Styles for a potentially fixed header if needed */
-    /* position: sticky; top: 0; z-index: 100; */
+  /* Styles for a potentially fixed header if needed */
+  /* position: sticky; top: 0; z-index: 100; */
 }
 
 .dashboard-mode .dashboard-content.single-view {
-    padding: var(--spacing-large); 
-    height: calc(100vh - 80px); /* Adjust height based on actual header height */
-    overflow: hidden; /* Prevent scrolling */
+  padding: 1rem;
+  /* Use a smaller padding or use var(--spacing-medium) */
+  height: calc(100vh - 70px);
+  /* Adjust based on actual header height (assuming 70px) */
+  overflow: hidden;
+  /* Prevent scrolling */
 }
 
 .main-layout-grid {
-    display: grid;
-    /* Example: 1 part for column 1, 2 parts for column 2 */
-    grid-template-columns: 1fr 1.5fr; 
-    gap: var(--spacing-large);
-    height: 100%; /* Fill the content area height */
+  display: grid;
+  /* Define rows and columns: Adjust fr values as needed */
+  grid-template-columns: 1fr 1.5fr;
+  /* Keep original column proportions */
+  grid-template-rows: auto 1fr;
+  /* Row 1 auto height, Row 2 takes remaining */
+  grid-template-areas:
+    "col1-top col2-top"
+    /* Top row: Task/Action, ObjectDetection/Odometry */
+    "vis      vis";
+  /* Bottom row: 3D Visualization spanning both columns */
+  gap: 1rem;
+  /* Use a smaller gap or var(--spacing-medium) */
+  height: 100%;
+  /* Fill the content area height */
 }
 
 .grid-column {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-large);
-    height: 100%; /* Make columns fill grid height */
-    overflow: hidden; /* Prevent columns from scrolling internally */
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  /* Match grid gap */
+  /* height: 100%; Remove height, let grid manage it */
+  overflow: hidden;
+  /* Prevent columns from scrolling internally */
 }
+
+/* Assign grid areas */
+.grid-column.column-1 {
+  grid-area: col1-top;
+}
+
+.grid-column.column-2 {
+  grid-area: col2-top;
+}
+
 
 /* Allow panels within columns to take available space */
 .grid-column .panel {
-   flex-shrink: 0; /* Prevent shrinking initially */
+  flex-shrink: 0;
+  /* Prevent shrinking initially */
 }
 
-/* Let the Object Detection panel grow */
+/* Adjust Object Detection panel - it no longer needs to grow excessively */
 .grid-column.column-2 .object-detection-panel {
-    flex-grow: 1; 
-    display: flex; /* Enable flex for internal layout */
-    flex-direction: column;
-    min-height: 0; /* Important for flex-grow with overflow */
+  flex-grow: 0;
+  /* Don't force grow */
+  flex-shrink: 1;
+  /* Allow shrinking */
+  display: flex;
+  /* Enable flex for internal layout */
+  flex-direction: column;
+  min-height: 0;
+  /* Important for flex-grow/shrink with overflow */
 }
 
 .grid-column.column-2 .object-detection-panel .panel-body {
-    flex-grow: 1; /* Allow panel body to expand */
-    overflow-y: auto; /* Allow scrolling only within object detection body if needed */
-    min-height: 0;
+  flex-grow: 1;
+  /* Allow panel body to expand */
+  overflow-y: auto;
+  /* Allow scrolling only within object detection body if needed */
+  min-height: 0;
 }
+
+/* New style for the dedicated visualization area */
+.visualization-area {
+  grid-area: vis;
+  display: flex;
+  /* Use flex to manage the panel inside */
+  flex-direction: column;
+  min-height: 0;
+  /* Important for grid areas */
+  border: 1px solid rgba(0, 255, 255, 0.1);
+  /* Optional: visualize boundary */
+  background-color: var(--surface);
+  /* Match panel background */
+}
+
+.visualization-area .panel {
+  /* If using a panel wrapper */
+  flex-grow: 1;
+  /* Allow the panel to fill the area */
+  display: flex;
+  flex-direction: column;
+  border: none;
+  /* Remove panel border if desired */
+  box-shadow: none;
+  /* Remove panel shadow if desired */
+}
+
+.visualization-area .panel .panel-body {
+  flex-grow: 1;
+  /* Allow panel body to fill */
+  padding: 0;
+  /* Remove padding if Three.js canvas handles it */
+  overflow: hidden;
+  /* Prevent scrollbars */
+  display: flex;
+  /* Ensure child (ThreeDVis) can fill */
+  justify-content: center;
+  /* Center content if needed */
+  align-items: center;
+  /* Center content if needed */
+}
+
 
 /* ==========================================
    Object Detection Panel Styles
    ========================================== */
 
 .object-detection-panel .panel-controls span {
-    font-size: 0.9em;
-    color: var(--accent-light);
-    background-color: rgba(0,0,0,0.2);
-    padding: 4px 8px;
-    border-radius: 4px;
+  font-size: 0.9em;
+  color: var(--accent-light);
+  background-color: rgba(0, 0, 0, 0.2);
+  padding: 4px 8px;
+  border-radius: 4px;
 }
 
 .camera-image-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); /* Adjust minmax for size */
-    gap: var(--spacing-medium);
-    margin-bottom: var(--spacing-medium);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  /* Adjust minmax for size */
+  gap: var(--spacing-medium);
+  margin-bottom: var(--spacing-medium);
 }
 
 .camera-view-item {
-    background-color: rgba(0,0,0, 0.2); /* Darker background */
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    overflow: hidden;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+  background-color: rgba(0, 0, 0, 0.2);
+  /* Darker background */
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
 }
 
 .camera-view-title {
-    background-color: var(--panel-header-bg); /* Match panel headers */
-    color: var(--accent-light);
-    padding: 6px 10px;
-    font-size: 0.85em;
-    font-weight: bold;
-    text-align: center;
-    border-bottom: 1px solid var(--border-color);
+  background-color: var(--panel-header-bg);
+  /* Match panel headers */
+  color: var(--accent-light);
+  padding: 6px 10px;
+  font-size: 0.85em;
+  font-weight: bold;
+  text-align: center;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .camera-image-container {
-    padding: var(--spacing-small);
+  padding: var(--spacing-small);
 }
 
 .camera-image {
-    display: block;
-    width: 100%;
-    height: auto;
-    border-radius: 3px;
-    background-color: #111; /* Placeholder bg for loading/error */
-    cursor: pointer;
-    transition: transform 0.2s ease-out;
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 3px;
+  background-color: #111;
+  /* Placeholder bg for loading/error */
+  cursor: pointer;
+  transition: transform 0.2s ease-out;
 }
 
 .camera-image:hover {
-    transform: scale(1.03);
-    box-shadow: 0 0 10px var(--accent);
+  transform: scale(1.03);
+  box-shadow: 0 0 10px var(--accent);
 }
 
 .object-list-container {
-    margin-top: var(--spacing-medium);
-    padding: var(--spacing-small);
-    border-top: 1px dashed var(--border-color-light);
+  margin-top: var(--spacing-medium);
+  padding: var(--spacing-small);
+  border-top: 1px dashed var(--border-color-light);
 }
 
 .object-list-title {
-    color: var(--accent-light);
-    font-size: 0.9em;
-    margin-bottom: var(--spacing-small);
-    text-transform: uppercase;
+  color: var(--accent-light);
+  font-size: 0.9em;
+  margin-bottom: var(--spacing-small);
+  text-transform: uppercase;
 }
 
 .object-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    font-size: 0.85em;
-    max-height: 150px; /* Allow some scrolling if list is long */
-    overflow-y: auto;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.85em;
+  max-height: 150px;
+  /* Allow some scrolling if list is long */
+  overflow-y: auto;
 }
 
 .object-list-item {
-    padding: 4px 0;
-    border-bottom: 1px solid var(--border-color-dark);
-    color: #ccc;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-color-dark);
+  color: #ccc;
 }
 
 .object-list-item:last-child {
-    border-bottom: none;
+  border-bottom: none;
 }
 
 .object-source {
-    color: #888; /* Dim the source */
-    font-style: italic;
-    margin-left: 5px;
+  color: #888;
+  /* Dim the source */
+  font-style: italic;
+  margin-left: 5px;
 }
 
 .object-position {
-    color: var(--accent);
-    font-weight: bold;
-    margin-left: 5px;
+  color: var(--accent);
+  font-weight: bold;
+  margin-left: 5px;
 }
 
 /* ==========================================
@@ -1258,24 +1360,25 @@ button.active {
    ========================================== */
 
 .odometry-content.compact-odometry {
-    display: flex;
-    flex-direction: column; /* Stack position and orientation */
-    gap: var(--spacing-small);
-    font-size: 0.95em;
+  display: flex;
+  flex-direction: column;
+  /* Stack position and orientation */
+  gap: var(--spacing-small);
+  font-size: 0.95em;
 }
 
 .compact-odometry .position-data,
 .compact-odometry .orientation-data {
-    background-color: rgba(0,0,0,0.15);
-    padding: 8px 12px;
-    border-radius: 4px;
-    border: 1px solid var(--border-color-dark);
+  background-color: rgba(0, 0, 0, 0.15);
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color-dark);
 }
 
 .compact-odometry .label {
-    font-weight: bold;
-    color: var(--accent-light);
-    margin-right: 8px;
+  font-weight: bold;
+  color: var(--accent-light);
+  margin-right: 8px;
 }
 
 /* ==========================================
@@ -1285,7 +1388,8 @@ button.active {
 .image-modal-overlay {
   position: fixed;
   inset: 0;
-  background-color: rgba(10, 20, 35, 0.9); /* Theme background with opacity */
+  background-color: rgba(10, 20, 35, 0.9);
+  /* Theme background with opacity */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1295,7 +1399,8 @@ button.active {
 }
 
 .image-modal-content {
-  max-width: 85vw; /* Adjust as needed */
+  max-width: 85vw;
+  /* Adjust as needed */
   max-height: 85vh;
   background-color: var(--background-dark);
   padding: var(--spacing-small);
@@ -1316,38 +1421,37 @@ button.active {
 
 /* Status text styles (used in multiple places) */
 .status-text {
-    font-style: italic;
-    color: #888;
+  font-style: italic;
+  color: #888;
 }
+
 .status-text.waiting {
-    color: var(--warning);
+  color: var(--warning);
 }
+
 .status-text.error {
-    color: var(--error);
+  color: var(--error);
 }
+
 .status-text.info {
-     color: var(--accent-light);
+  color: var(--accent-light);
 }
 
 /* Make sure panel body doesn't have excessive padding if content handles it */
-.object-detection-panel > .panel-body {
-    padding: var(--spacing-medium); /* Adjust as needed */
+.object-detection-panel>.panel-body {
+  overflow-y: auto;
+  /* Keep scrolling for camera/list */
 }
 
-/* Adding styles for 3D visualization container */
-.three-d-visualization-container {
-  margin-bottom: 1rem;
-  padding: 0.5rem;
-  background: var(--surface-dark);
-  border: 1px solid var(--primary);
-  border-radius: 4px;
-  box-shadow: 0 0 10px var(--primary-glow);
+/* ==========================================
+   3D Visualization Styles
+   ========================================== */
+/* Add any specific styles needed for the ThreeDVisualization component itself, */
+/* e.g., ensuring its canvas fills its container */
+.three-d-visualization {
+  /* Assuming ThreeDVisualization root element has this class */
+  width: 100%;
+  height: 100%;
+  display: block;
+  /* Ensure canvas behaves like a block */
 }
-
-.three-d-visualization-container h3 {
-  margin-top: 0;
-  color: var(--primary);
-  font-size: 1rem;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-} 
