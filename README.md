@@ -45,7 +45,7 @@ python3.10 -m venv spotvenv && echo "✅ Virtual environment 'spotvenv' (Python 
    ```
 
 6. Start Ollama server (if not already running):
-   ```
+   ```shell
    ollama serve
    ```
 
