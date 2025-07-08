@@ -7,6 +7,11 @@ A voice-controlled agent for Boston Dynamics Spot robot. This application uses c
 3. Processes commands with a local LLM via Ollama/Google/Openrouter
 4. Controls a Boston Dynamics Spot robot based on user voice commands
 
+## Connect to Spot
+The shell script connects to the PC via ssh on the back of the robot.
+```shell
+sh utils/ssh-spot-login.sh
+```
 ## Setup
 
 Skip 1, 2, 6 if not running LLM locally
@@ -30,7 +35,11 @@ Skip 1, 2, 6 if not running LLM locally
    SPOT_PASSWORD=your_spot_password
    ```
 
-5. Install dependencies:
+4. Create a virtual env for python
+```shell
+python3.10 -m venv spot-venv && echo "✅ Virtual environment 'spot-venv' created. Activate with: source spot-venv/bin/activate"
+```
+5. Install dependencies on python3.10:
    ```
    pip install -r requirements.txt
    ```
