@@ -1,0 +1,12 @@
+name: Echo Only
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  echo-job:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Hello from GitHub Actions"
