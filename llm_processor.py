@@ -180,9 +180,9 @@ class LLMProcessor:
         prompt = f"{SPOT_SYSTEM_PROMPT}\n\n"
         
         # Get the latest vision, odometry, and object detection logs
-        latest_vision_log = self.spot_controller.get_vision_logs(1) if hasattr(self, 'spot_controller') and self.spot_controller else None
+        #latest_vision_log = self.spot_controller.get_vision_logs(1) if hasattr(self, 'spot_controller') and self.spot_controller else None
         latest_odometry_log = self.spot_controller.get_odometry_logs(1) if hasattr(self, 'spot_controller') and self.spot_controller else None
-        latest_object_detection_log = self.spot_controller.get_object_detection_logs(1) if hasattr(self, 'spot_controller') and self.spot_controller else None
+        #latest_object_detection_log = self.spot_controller.get_object_detection_logs(1) if hasattr(self, 'spot_controller') and self.spot_controller else None
         
         # Add action log if available
         if action_log and len(action_log) > 0:
@@ -212,15 +212,15 @@ class LLMProcessor:
             task_data = {}
         
         # Integrate latest logs into task_data
-        if latest_vision_log:
-            task_data["latest_vision"] = latest_vision_log
+        #if latest_vision_log:
+        #    task_data["latest_vision"] = latest_vision_log
         
         if latest_odometry_log:
             task_data["latest_odometry"] = latest_odometry_log
             
-        if latest_object_detection_log and 'objects' in latest_object_detection_log:
-            # Add the latest detected objects to task_data
-            task_data["latest_detected_objects"] = latest_object_detection_log['objects']
+        #if latest_object_detection_log and 'objects' in latest_object_detection_log:
+        #    # Add the latest detected objects to task_data
+        #    task_data["latest_detected_objects"] = latest_object_detection_log['objects']
         
         if task_data:
             prompt += f"Current task information:\n{json.dumps(task_data, indent=2)}\n\n"

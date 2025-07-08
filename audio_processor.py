@@ -16,7 +16,7 @@ CHUNK = 1024
 SILENCE_THRESHOLD = 100 # Adjusted based on your environment
 SNIPPET_SILENCE_DURATION = 0.5  # seconds of silence to detect snippet end
 SENTENCE_SILENCE_DURATION = 0.5  # seconds of silence to detect sentence end (Kind of redundant at the moment)
-SPEECH_ENERGY_THRESHOLD_MULTIPLIER = 10  # Multiplier over background noise level for speech detection
+SPEECH_ENERGY_THRESHOLD_MULTIPLIER = 2  # Multiplier over background noise level for speech detection
 NOISE_ESTIMATION_SECONDS = 1  # Initial seconds to estimate background noise
 
 class AudioProcessor:
@@ -36,7 +36,8 @@ class AudioProcessor:
         compute_type = os.getenv("WHISPER_COMPUTE_TYPE", "float32")
         print(f"Loading Whisper model '{model_size}' (this may take a moment)...")
         
-        self.model = WhisperModel(model_size, device="cuda", compute_type=compute_type)
+        #self.model = WhisperModel(model_size, device="cuda", compute_type=compute_type)
+        self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
         print("Whisper model loaded successfully")
         
         # Start background transcription thread

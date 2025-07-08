@@ -12,3 +12,4 @@ google-generativeai
 pydantic
 fastapi
 uvicorn[standard] 
+google-genai

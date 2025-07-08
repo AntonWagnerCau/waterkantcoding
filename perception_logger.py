@@ -58,7 +58,7 @@ class PerceptionLogger:
         # Start vision thread
         self.vision_thread = threading.Thread(target=self._vision_loop)
         self.vision_thread.daemon = True
-        self.vision_thread.start()
+        #self.vision_thread.start()
         
         # Start terrain thread
         #self.terrain_thread = threading.Thread(target=self._terrain_loop)
@@ -68,7 +68,7 @@ class PerceptionLogger:
         # Start object detection thread
         self.object_detection_thread = threading.Thread(target=self._object_detection_loop)
         self.object_detection_thread.daemon = True
-        self.object_detection_thread.start()
+        #self.object_detection_thread.start()
         
         print("Perception logging started")
     
