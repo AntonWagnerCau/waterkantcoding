@@ -3,6 +3,9 @@
 
 # Python virtual environment
 venv/
+.venv/
+spotvenv/**
+.idea/
 env/
 __pycache__/
 *.py[cod]
