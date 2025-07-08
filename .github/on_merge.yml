@@ -1,0 +1,13 @@
+name: On Main Merge CI
+on:
+  push:
+    branches:
+      - main
+jobs:
+  ssh-echo:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: SSH and echo
+        script: |
+            echo "🟢Hello action here !"
