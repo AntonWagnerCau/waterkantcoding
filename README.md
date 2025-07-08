@@ -37,7 +37,7 @@ Skip 1, 2, 6 if not running LLM locally
 
 4. Create a virtual env for python
 ```shell
-python3.10 -m venv spot-venv && echo "✅ Virtual environment 'spot-venv' created. Activate with: source spot-venv/bin/activate"
+python3.10 -m venv spotvenv && echo "✅ Virtual environment 'spotvenv' (Python 3.10) created. Activate with: source spotvenv/bin/activate"
 ```
 5. Install dependencies on python3.10:
    ```
