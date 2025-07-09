@@ -1,29 +1,31 @@
 import os
+import json
 import time
+from pathlib import Path
+
 import numpy as np
 from ikpy.chain import Chain
 from lerobot.robots.so100_follower import SO100Follower, SO100FollowerConfig
+
+# === Load paths ===
 current_dir = os.path.dirname(os.path.abspath(__file__))
 urdf_path_config = os.path.join(current_dir, "geometry-config", "so101_new_calib.urdf")
-class Arm:
-    JOINTS = {
-        "j6": {"name": "shoulder_pan.pos", "range": (-115, 115)},
-        "j5": {"name": "shoulder_lift.pos", "range": (-100, 100)},
-        "j4": {"name": "elbow_flex.pos", "range": (-99, 90)},
-        "j3": {"name": "wrist_flex.pos", "range": (-100, 100)},
-        "j2": {"name": "wrist_roll.pos", "range": (-160, 160)},
-        "j1": {"name": "gripper.pos", "range": (0, 100)},
-    }
+robot_config_path = os.path.join(current_dir, "calibration", "robot_one.json")
 
+# === Load robot config JSON ===
+with open(robot_config_path, "r") as file:
+    raw_config = json.load(file)
+
+# === Normalize JOINTS to use keys with '.pos'
+JOINTS = {
+    f"{name}.pos": {**config, "name": f"{name}.pos"}
+    for name, config in raw_config.items()
+}
+
+
+class Arm:
+    JOINTS = JOINTS
     INITIAL_POSITION = {
-        "shoulder_pan.pos": -10,
-        "shoulder_lift.pos": -100,
-        "elbow_flex.pos": 99,
-        "wrist_flex.pos": 100,
-        "wrist_roll.pos": 0,
-        "gripper.pos": 0,
-    }
-    POINTER_POSITION = {
         "shoulder_pan.pos": 0,
         "shoulder_lift.pos": 0,
         "elbow_flex.pos": 0,
@@ -33,71 +35,64 @@ class Arm:
     }
 
 
-    def __init__(self, port="/dev/tty.usbmodem59700731401", urdf_path=urdf_path_config):
+    def __init__(self, port="/dev/tty.usbmodem58760432171", urdf_path=urdf_path_config):
         self.cfg = SO100FollowerConfig(
             port=port,
             use_degrees=True,
             max_relative_target=None,
+            calibration_dir=Path("calibration"),
+            id="robot_one"
         )
         self.robot = SO100Follower(self.cfg)
         self.robot.connect()
         print("Robot connected.")
 
-        # Load kinematic chain from URDF
-        self.chain = Chain.from_urdf_file(urdf_path)
-
+        # self.chain = Chain.from_urdf_file(urdf_path)
         self.move_to_position(self.INITIAL_POSITION)
-        self.move_to_position(self.POINTER_POSITION)
 
     def move_to_xyz(self, x, y, z):
-        """
-        Move the end effector to (x, y, z) using inverse kinematics from the URDF.
-        """
-
         print(f"Target XYZ: ({x}, {y}, {z})")
 
         target_frame = np.eye(4)
         target_frame[:3, 3] = [x, y, z]
 
-        # Solve IK
         angles = self.chain.inverse_kinematics(target_frame)
 
-        # Map angles to joint names and send
         joint_action = {}
-        for i, (key, joint_info) in enumerate(list(self.JOINTS.items())[::-1]):
-            deg = np.degrees(angles[i + 1])  # skip base link (index 0)
-            min_val, max_val = joint_info["range"]
-            clamped = max(min_val, min(max_val, deg))
-            joint_action[joint_info["name"]] = clamped
+        joint_keys = list(self.JOINTS.keys())[::-1]  # j1 to j6
+        for i, joint_key in enumerate(joint_keys):
+            joint = self.JOINTS[joint_key]
+            degrees = np.degrees(angles[i + 1])  # skip base
+            clamped = max(joint["range_min"], min(joint["range_max"], degrees))
+            joint_action[joint["name"]] = clamped
 
         print("Calculated joint angles:", joint_action)
         self.robot.send_action(joint_action)
         time.sleep(2)
 
-    def move_to_position(self,position):
+    def move_to_position(self, position):
         print(f"Moving to position...{position}")
         self.robot.send_action(position)
-        time.sleep(2)
-        print("Arm in initial position.")
+        # self.robot.disconnect()
+
+
 
     def move_joint(self, joint_key, value):
         if joint_key not in self.JOINTS:
             raise ValueError(f"Invalid joint: {joint_key}")
         joint = self.JOINTS[joint_key]
-        min_val, max_val = joint["range"]
-        value = max(min_val, min(max_val, value))  # Clamp
-        self.robot.send_action({joint["name"]: value})
-        print(f"Moved {joint['name']} to {value}")
+        clamped = max(joint["range_min"], min(joint["range_max"], value))
+        self.robot.send_action({joint["name"]: clamped})
+        print(f"Moved {joint['name']} to {clamped}")
 
     def interactive_control(self):
         try:
             while True:
                 print("\nAvailable joints:")
                 for key, info in self.JOINTS.items():
-                    r = info["range"]
-                    print(f"  {key}: {info['name']} ({r[0]} to {r[1]})")
+                    print(f"  {key}: range {info['range_min']} to {info['range_max']}")
 
-                joint_input = input("\nEnter joint (j1–j6) or 'q' to quit: ").strip().lower()
+                joint_input = input("\nEnter joint (e.g. shoulder_pan.pos) or 'q' to quit: ").strip().lower()
                 if joint_input == "q":
                     self.move_to_position(self.INITIAL_POSITION)
                     break
@@ -117,7 +112,27 @@ class Arm:
             self.robot.disconnect()
             print("Robot disconnected.")
 
+INITIAL_POSITION = {
+    "shoulder_pan.pos": -10,
+    "shoulder_lift.pos": 0,
+    "elbow_flex.pos": 0,
+    "wrist_flex.pos": 0,
+    "wrist_roll.pos": 0,
+    "gripper.pos": 0,
+}
+POINTER_POSITION = {
+    "shoulder_pan.pos":  0,   # centered
+    "shoulder_lift.pos": 100,                # max raise
+    "elbow_flex.pos":    -100,                   # fully straight
+    "wrist_flex.pos":    -80,                   # fully straight
+    "wrist_roll.pos":    0,                # neutral mid-point
+    "gripper.pos":       0,                # neutral grip
+}
 
-arm = Arm()
-# arm.interactive_control()
-arm.move_to_xyz(0,0,10)
+# === Run arm controller ===
+if __name__ == "__main__":
+    arm = Arm()
+    # arm.interactive_control()
+    arm.move_to_position(INITIAL_POSITION)
+    # arm.move_to_position(POINTER_POSITION)
+    # arm.move_to_xyz(0, 0, 10)
