@@ -5,7 +5,10 @@ from pathlib import Path
 
 import numpy as np
 from ikpy.chain import Chain
+from numba.core.typing.builtins import Print
+
 from lerobot.robots.so100_follower import SO100Follower, SO100FollowerConfig
+from robot.arm.lerobot.robots.so101_follower import SO101Follower
 
 # === Load paths ===
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -16,24 +19,38 @@ robot_config_path = os.path.join(current_dir, "calibration", "robot_one.json")
 with open(robot_config_path, "r") as file:
     raw_config = json.load(file)
 
+rangeOfMotion ={
+    "shoulder_pan":(-100,100),
+    "shoulder_lift":(0,160),
+    "elbow_flex":(0,-160),
+    "wrist_flex":(0,-160),
+    "wrist_roll":(0, -160),
+    "gripper":(0,100),
+}
+
 # === Normalize JOINTS to use keys with '.pos'
 JOINTS = {
-    f"{name}.pos": {**config, "name": f"{name}.pos"}
+    f"{name}.pos": {
+        **config,
+        "name": f"{name}.pos",
+        "degree_range": rangeOfMotion.get(name)
+    }
     for name, config in raw_config.items()
 }
 
 
+
 class Arm:
     JOINTS = JOINTS
-    INITIAL_POSITION = {
-        "shoulder_pan.pos": 0,
-        "shoulder_lift.pos": 0,
-        "elbow_flex.pos": 0,
-        "wrist_flex.pos": 0,
-        "wrist_roll.pos": 0,
-        "gripper.pos": 0,
-    }
 
+    # INITIAL_POSITION = {
+    #     "shoulder_pan.pos": 0,
+    #     "shoulder_lift.pos": 0,
+    #     "elbow_flex.pos": 0,
+    #     "wrist_flex.pos": 0,
+    #     "wrist_roll.pos": 0,
+    #     "gripper.pos": 0,
+    # }
 
     def __init__(self, port="/dev/tty.usbmodem58760432171", urdf_path=urdf_path_config):
         self.cfg = SO100FollowerConfig(
@@ -43,12 +60,12 @@ class Arm:
             calibration_dir=Path("calibration"),
             id="robot_one"
         )
-        self.robot = SO100Follower(self.cfg)
+        self.robot = SO101Follower(self.cfg)
         self.robot.connect()
         print("Robot connected.")
 
         # self.chain = Chain.from_urdf_file(urdf_path)
-        self.move_to_position(self.INITIAL_POSITION)
+        # self.move_to_position(self.INITIAL_POSITION)
 
     def move_to_xyz(self, x, y, z):
         print(f"Target XYZ: ({x}, {y}, {z})")
@@ -73,9 +90,7 @@ class Arm:
     def move_to_position(self, position):
         print(f"Moving to position...{position}")
         self.robot.send_action(position)
-        # self.robot.disconnect()
-
-
+        time.sleep(4)
 
     def move_joint(self, joint_key, value):
         if joint_key not in self.JOINTS:
@@ -112,27 +127,27 @@ class Arm:
             self.robot.disconnect()
             print("Robot disconnected.")
 
-INITIAL_POSITION = {
-    "shoulder_pan.pos": -10,
-    "shoulder_lift.pos": 0,
-    "elbow_flex.pos": 0,
-    "wrist_flex.pos": 0,
-    "wrist_roll.pos": 0,
-    "gripper.pos": 0,
+
+INITIAL_POSITION  = {
+    "shoulder_pan.pos": 0, # -100-100
+    "shoulder_lift.pos": 0, # 0- 160
+    "elbow_flex.pos": 0,   # 0- -160
+    "wrist_flex.pos": 0,  # 0- -160
+    "wrist_roll.pos": -160,  # 0- -160
+    "gripper.pos": 0,  # 0-100
 }
 POINTER_POSITION = {
-    "shoulder_pan.pos":  0,   # centered
-    "shoulder_lift.pos": 100,                # max raise
-    "elbow_flex.pos":    -100,                   # fully straight
-    "wrist_flex.pos":    -80,                   # fully straight
-    "wrist_roll.pos":    0,                # neutral mid-point
-    "gripper.pos":       0,                # neutral grip
+    "shoulder_pan.pos": 0, # -100-100
+    "shoulder_lift.pos": 80, # 0- 160
+    "elbow_flex.pos": -80,   # 0- -160
+    "wrist_flex.pos": -100,  # 0- -160
+    "wrist_roll.pos": -160,  # 0- -160
+    "gripper.pos": 0,  # 0-100
 }
 
 # === Run arm controller ===
 if __name__ == "__main__":
     arm = Arm()
     # arm.interactive_control()
-    arm.move_to_position(INITIAL_POSITION)
-    # arm.move_to_position(POINTER_POSITION)
-    # arm.move_to_xyz(0, 0, 10)
+    # arm.move_to_position(INITIAL_POSITION)
+    arm.move_to_xyz(0, 0, 10)
