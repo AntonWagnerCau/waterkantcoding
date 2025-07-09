@@ -1,6 +1,6 @@
 import time
 import numpy as np
-from ikpy.chain import Chain
+
 from lerobot.robots.so100_follower import SO100Follower, SO100FollowerConfig
 
 
@@ -35,7 +35,7 @@ class Arm:
 
 
 
-    def __init__(self, port="/dev/tty.usbmodem59700731401", urdf_path="geometry-config/so101_new_calib.urdf"):
+    def __init__(self, port="/dev/tty.usbmodem59700731401"):
         self.cfg = SO100FollowerConfig(
             port=port,
             use_degrees=True,
@@ -46,7 +46,7 @@ class Arm:
         print("Robot connected.")
 
         # Load kinematic chain from URDF
-        self.chain = Chain.from_urdf_file(urdf_path)
+        # self.chain = Chain.from_urdf_file(urdf_path)
 
         self.move_to_position(self.INITIAL_POSITION)
         self.move_to_position(self.POINTER_POSITION)
