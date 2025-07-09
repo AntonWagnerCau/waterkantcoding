@@ -33,9 +33,6 @@ class Arm:
     }
 
 
-
-
-
     def __init__(self, port="/dev/tty.usbmodem59700731401", urdf_path=urdf_path_config):
         self.cfg = SO100FollowerConfig(
             port=port,
@@ -122,4 +119,5 @@ class Arm:
 
 
 arm = Arm()
-arm.interactive_control()
+# arm.interactive_control()
+arm.move_to_xyz(0,0,0)
