@@ -2,6 +2,7 @@
 .env
 
 # Python virtual environment
+.venv/
 venv/
 .venv/
 spotvenv/**
