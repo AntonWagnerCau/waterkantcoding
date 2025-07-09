@@ -120,4 +120,4 @@ class Arm:
 
 arm = Arm()
 # arm.interactive_control()
-arm.move_to_xyz(0,0,0)
+arm.move_to_xyz(0,0,10)
