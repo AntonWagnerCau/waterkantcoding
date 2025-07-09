@@ -43,9 +43,9 @@ JOINTS = {
 class Arm:
     INITIAL_POSITION  = {
         "shoulder_pan.pos": 0, # -100-100
-        "shoulder_lift.pos": 0, # 0- 160
-        "elbow_flex.pos": 0,   # 0- -160
-        "wrist_flex.pos": 0,  # 0- -160
+        "shoulder_lift.pos": -100, # 0- 160
+        "elbow_flex.pos": 100,   # 0- -160
+        "wrist_flex.pos": 160,  # 0- -160
         "wrist_roll.pos": -160,  # 0- -160
         "gripper.pos": 0,  # 0-100
     }
@@ -59,7 +59,7 @@ class Arm:
             id="robot_one"
         )
         self.robot = SO100Follower(self.cfg)
-        self.robot.connect(calibrate=False)
+        self.robot.connect(calibrate=True)
         print("Robot connected.")
 
         self.chain = Chain.from_urdf_file(urdf_path)
@@ -153,18 +153,18 @@ class Arm:
 
 POINTER_POSITION = {
     "shoulder_pan.pos": 0, # -100-100
-    "shoulder_lift.pos": 80, # 0- 160
-    "elbow_flex.pos": -80,   # 0- -160
-    "wrist_flex.pos": -100,  # 0- -160
-    "wrist_roll.pos": -160,  # 0- -160
-    "gripper.pos": 0,  # 0-100
+    "shoulder_lift.pos": 0, # 0- 160
+    "elbow_flex.pos":0,   # 0- -160
+    "wrist_flex.pos": 90,  # 0- 160
+    "wrist_roll.pos": 160,  # 0- -160
+    "gripper.pos": 0,  # 0-100z
 }
 
 # === Run arm controller ===
 if __name__ == "__main__":
     arm = Arm()
     # arm.interactive_control()
-    arm.move_to_position(POINTER_POSITION)
+    # arm.move_to_position(POINTER_POSITION)
     # arm.move_to_xyz(0.1, 0.1, 0.1)
 
 
