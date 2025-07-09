@@ -20,6 +20,9 @@ from utils.timestamp_utils import parse_timestamp
 from bosdyn.client.ray_cast import RayCastClient
 from bosdyn.api import ray_cast_pb2
 import math # Import math for degrees conversion
+from bosdyn.api import geometry_pb2
+from bosdyn.geometry import EulerZXY
+import time
 
 # Helper function for coordinate transformation
 def transform_point_for_rotation(px, py, orig_w, orig_h, rot_w, rot_h, angle_deg):
@@ -234,6 +237,33 @@ class SpotController:
     def walk_backward(self, distance_meters):
         """Command the robot to walk backward"""
         return self.relative_move(-distance_meters, 0)
+
+    def tilt(self):
+        """Command the robot to kneel (tilt body forward)"""
+        if not self.connected:
+            print("Robot not connected, simulating kneel")
+            return True
+
+        try:
+            # Forward pitch of about 20 degrees (~0.35 radians)
+            pitch_angle_rad = 0.35
+
+            # Roll, pitch, yaw
+            orientation = EulerZXY(roll=0.0, pitch=pitch_angle_rad, yaw=0.0)
+
+            # Create the stand command with tilted orientation
+            cmd = RobotCommandBuilder.synchro_stand_command(
+                footprint_R_body=orientation
+            )
+
+            # Send the command
+            self.command_client.robot_command(cmd, end_time_secs=time.time() + 3)
+
+            return True
+
+        except Exception as e:
+            print(f"Error kneeling: {e}")
+            return False
     
     def turn(self, degrees):
         """Command the robot to turn by specified degrees"""

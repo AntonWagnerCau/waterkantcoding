@@ -249,15 +249,16 @@ def main():
     try:
         schedule_state_update({"status": "Idle - Ready for command"}) 
         while True:
-            # Start recording for initial command if not already recording
-            if not audio_processor.is_recording:
-                print("Ready for next command. Speak now...")
-                schedule_state_update({"status": "Listening..."})
-                audio_processor.start_recording()
+            # Prompt the user for text input
+            print("Enter your command (or 'exit' to quit):")
+            text = input("> ").strip()
             
-            # Check for transcription periodically
-            schedule_state_update({"status": "Listening..."})
-            text = audio_processor.get_transcription()
+            if not text:
+                continue  # Skip empty inputs
+            if text.lower() in {"exit", "quit"}:
+                print("Exiting SpotAgent.")
+                break
+
             if text:
                 print(f"Transcription received: {text}")
                 schedule_state_update({"status": "Processing Command", "current_task_prompt": text})
@@ -346,6 +347,10 @@ def main():
                     
                     elif action == 'stand':
                         result = spot_controller.stand()
+                        action_result = {"success": result}
+
+                    elif action == 'tilt':
+                        result = spot_controller.tilt()
                         action_result = {"success": result}
                     
                     elif action == 'task_complete':

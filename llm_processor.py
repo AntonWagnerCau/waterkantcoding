@@ -34,6 +34,7 @@ Available actions:
 - turn(degrees): Turn clockwise (positive) or counterclockwise (negative)
 - sit(): Make the robot sit
 - stand(): Make the robot stand up
+- tilt(): Make the robot tilt forward
 - task_complete(success, reason): Indicate that the task is complete with success status and reason
 
 
