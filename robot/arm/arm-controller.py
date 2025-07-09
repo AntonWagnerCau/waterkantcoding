@@ -1,5 +1,8 @@
-from lerobot.robots.so100_follower import SO100Follower, SO100FollowerConfig
 import time
+import numpy as np
+from ikpy.chain import Chain
+from lerobot.robots.so100_follower import SO100Follower, SO100FollowerConfig
+
 
 class Arm:
     JOINTS = {
@@ -19,8 +22,20 @@ class Arm:
         "wrist_roll.pos": 0,
         "gripper.pos": 0,
     }
+    POINTER_POSITION = {
+        "shoulder_pan.pos": 0,
+        "shoulder_lift.pos": 0,
+        "elbow_flex.pos": 0,
+        "wrist_flex.pos": 0,
+        "wrist_roll.pos": 0,
+        "gripper.pos": 0,
+    }
 
-    def __init__(self, port="/dev/tty.usbmodem59700731401"):
+
+
+
+
+    def __init__(self, port="/dev/tty.usbmodem59700731401", urdf_path="geometry-config/so101_new_calib.urdf"):
         self.cfg = SO100FollowerConfig(
             port=port,
             use_degrees=True,
@@ -29,11 +44,41 @@ class Arm:
         self.robot = SO100Follower(self.cfg)
         self.robot.connect()
         print("Robot connected.")
-        self.move_to_initial_position()
 
-    def move_to_initial_position(self):
-        print("Moving to initial position...")
-        self.robot.send_action(self.INITIAL_POSITION)
+        # Load kinematic chain from URDF
+        self.chain = Chain.from_urdf_file(urdf_path)
+
+        self.move_to_position(self.INITIAL_POSITION)
+        self.move_to_position(self.POINTER_POSITION)
+
+    def move_to_xyz(self, x, y, z):
+        """
+        Move the end effector to (x, y, z) using inverse kinematics from the URDF.
+        """
+
+        print(f"Target XYZ: ({x}, {y}, {z})")
+
+        target_frame = np.eye(4)
+        target_frame[:3, 3] = [x, y, z]
+
+        # Solve IK
+        angles = self.chain.inverse_kinematics(target_frame)
+
+        # Map angles to joint names and send
+        joint_action = {}
+        for i, (key, joint_info) in enumerate(list(self.JOINTS.items())[::-1]):
+            deg = np.degrees(angles[i + 1])  # skip base link (index 0)
+            min_val, max_val = joint_info["range"]
+            clamped = max(min_val, min(max_val, deg))
+            joint_action[joint_info["name"]] = clamped
+
+        print("Calculated joint angles:", joint_action)
+        self.robot.send_action(joint_action)
+        time.sleep(2)
+
+    def move_to_position(self,position):
+        print(f"Moving to position...{position}")
+        self.robot.send_action(position)
         time.sleep(2)
         print("Arm in initial position.")
 
@@ -56,6 +101,7 @@ class Arm:
 
                 joint_input = input("\nEnter joint (j1–j6) or 'q' to quit: ").strip().lower()
                 if joint_input == "q":
+                    self.move_to_position(self.INITIAL_POSITION)
                     break
 
                 if joint_input not in self.JOINTS:
@@ -72,5 +118,7 @@ class Arm:
         finally:
             self.robot.disconnect()
             print("Robot disconnected.")
+
+
 arm = Arm()
 arm.interactive_control()
