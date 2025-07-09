@@ -238,18 +238,15 @@ class SpotController:
         """Command the robot to walk backward"""
         return self.relative_move(-distance_meters, 0)
 
-    def tilt(self):
-        """Command the robot to kneel (tilt body forward)"""
+    def tilt(self, pitch=0.0, roll=0.0, yaw=0.0):
+        """Command the robot to tilt its body with specified roll, pitch, and yaw angles (in radians)."""
         if not self.connected:
-            print("Robot not connected, simulating kneel")
+            print(f"Robot not connected, simulating tilt: roll={roll}, pitch={pitch}, yaw={yaw}")
             return True
 
         try:
-            # Forward pitch of about 20 degrees (~0.35 radians)
-            pitch_angle_rad = 0.35
-
             # Roll, pitch, yaw
-            orientation = EulerZXY(roll=0.0, pitch=pitch_angle_rad, yaw=0.0)
+            orientation = EulerZXY(roll=roll, pitch=pitch, yaw=yaw)
 
             # Create the stand command with tilted orientation
             cmd = RobotCommandBuilder.synchro_stand_command(
@@ -262,7 +259,7 @@ class SpotController:
             return True
 
         except Exception as e:
-            print(f"Error kneeling: {e}")
+            print(f"Error tilting: {e}")
             return False
     
     def turn(self, degrees):

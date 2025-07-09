@@ -350,7 +350,11 @@ def main():
                         action_result = {"success": result}
 
                     elif action == 'tilt':
-                        result = spot_controller.tilt()
+                        result = spot_controller.tilt(
+                            params.get('pitch', 0) or 0, 
+                            params.get('roll', 0) or 0,
+                            params.get('yaw', 0) or 0
+                        )
                         action_result = {"success": result}
                     
                     elif action == 'task_complete':
