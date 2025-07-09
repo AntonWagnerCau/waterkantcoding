@@ -6,7 +6,8 @@ from pathlib import Path
 import numpy as np
 from ikpy.chain import Chain
 
-from lerobot.robots.so100_follower import SO100Follower, SO100FollowerConfig
+from lerobot.robots.so100_follower import SO100FollowerConfig
+from robot.arm.lerobot.robots.so100_follower import SO100Follower
 from robot.arm.lerobot.robots.so101_follower import SO101Follower
 
 # === Load paths ===
@@ -57,8 +58,8 @@ class Arm:
             calibration_dir=Path("calibration"),
             id="robot_one"
         )
-        self.robot = SO101Follower(self.cfg)
-        self.robot.connect()
+        self.robot = SO100Follower(self.cfg)
+        self.robot.connect(calibrate=False)
         print("Robot connected.")
 
         self.chain = Chain.from_urdf_file(urdf_path)
@@ -165,3 +166,20 @@ if __name__ == "__main__":
     # arm.interactive_control()
     arm.move_to_position(POINTER_POSITION)
     # arm.move_to_xyz(0.1, 0.1, 0.1)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
