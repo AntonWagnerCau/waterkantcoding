@@ -353,7 +353,9 @@ def main():
                         result = spot_controller.tilt(
                             params.get('pitch', 0) or 0, 
                             params.get('roll', 0) or 0,
-                            params.get('yaw', 0) or 0
+                            params.get('yaw', 0) or 0,
+                            params.get('bh', 0) or 0
+
                         )
                         action_result = {"success": result}
                     

@@ -238,18 +238,19 @@ class SpotController:
         """Command the robot to walk backward"""
         return self.relative_move(-distance_meters, 0)
 
-    def tilt(self, pitch=0.0, roll=0.0, yaw=0.0):
-        """Command the robot to tilt its body with specified roll, pitch, and yaw angles (in radians)."""
+    def tilt(self, pitch=0.0, roll=0.0, yaw=0.0, bh=0.0):
+        """Command the robot to tilt its body with specified roll, pitch, yaw angles (in radians), and adjust body height (in meters)."""
         if not self.connected:
-            print(f"Robot not connected, simulating tilt: roll={roll}, pitch={pitch}, yaw={yaw}")
+            print(f"Robot not connected, simulating tilt: roll={roll}, pitch={pitch}, yaw={yaw}, bh={bh}")
             return True
 
         try:
             # Roll, pitch, yaw
             orientation = EulerZXY(roll=roll, pitch=pitch, yaw=yaw)
 
-            # Create the stand command with tilted orientation
+            # Create the stand command with tilted orientation and body height
             cmd = RobotCommandBuilder.synchro_stand_command(
+                body_height=bh,
                 footprint_R_body=orientation
             )
 
@@ -261,7 +262,7 @@ class SpotController:
         except Exception as e:
             print(f"Error tilting: {e}")
             return False
-    
+
     def turn(self, degrees):
         """Command the robot to turn by specified degrees"""
         if not self.connected:
