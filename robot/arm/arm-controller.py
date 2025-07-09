@@ -5,7 +5,6 @@ from pathlib import Path
 
 import numpy as np
 from ikpy.chain import Chain
-from numba.core.typing.builtins import Print
 
 from lerobot.robots.so100_follower import SO100Follower, SO100FollowerConfig
 from robot.arm.lerobot.robots.so101_follower import SO101Follower
@@ -41,17 +40,15 @@ JOINTS = {
 
 
 class Arm:
+    INITIAL_POSITION  = {
+        "shoulder_pan.pos": 0, # -100-100
+        "shoulder_lift.pos": 0, # 0- 160
+        "elbow_flex.pos": 0,   # 0- -160
+        "wrist_flex.pos": 0,  # 0- -160
+        "wrist_roll.pos": -160,  # 0- -160
+        "gripper.pos": 0,  # 0-100
+    }
     JOINTS = JOINTS
-
-    # INITIAL_POSITION = {
-    #     "shoulder_pan.pos": 0,
-    #     "shoulder_lift.pos": 0,
-    #     "elbow_flex.pos": 0,
-    #     "wrist_flex.pos": 0,
-    #     "wrist_roll.pos": 0,
-    #     "gripper.pos": 0,
-    # }
-
     def __init__(self, port="/dev/tty.usbmodem58760432171", urdf_path=urdf_path_config):
         self.cfg = SO100FollowerConfig(
             port=port,
@@ -64,8 +61,8 @@ class Arm:
         self.robot.connect()
         print("Robot connected.")
 
-        # self.chain = Chain.from_urdf_file(urdf_path)
-        # self.move_to_position(self.INITIAL_POSITION)
+        self.chain = Chain.from_urdf_file(urdf_path)
+        self.move_to_position(self.INITIAL_POSITION)
 
     def move_to_xyz(self, x, y, z):
         print(f"Target XYZ: ({x}, {y}, {z})")
@@ -74,16 +71,40 @@ class Arm:
         target_frame[:3, 3] = [x, y, z]
 
         angles = self.chain.inverse_kinematics(target_frame)
+        print("IK angles:", angles, type(angles), np.shape(angles))
 
         joint_action = {}
-        joint_keys = list(self.JOINTS.keys())[::-1]  # j1 to j6
+
+        # We assume angles[0] is base, skip it if you don't control base joint
+        # Order joint keys to match IK output order (usually matches chain.joints)
+        joint_keys = list(self.JOINTS.keys())
+
+        if len(angles) - 1 != len(joint_keys):
+            print(f"Warning: IK angles ({len(angles) - 1}) and joint keys ({len(joint_keys)}) count mismatch")
+
         for i, joint_key in enumerate(joint_keys):
             joint = self.JOINTS[joint_key]
-            degrees = np.degrees(angles[i + 1])  # skip base
-            clamped = max(joint["range_min"], min(joint["range_max"], degrees))
-            joint_action[joint["name"]] = clamped
+            # IK angle at i+1 if base is ignored
+            angle_rad = angles[i + 1]
+            angle_deg = np.degrees(angle_rad)
 
-        print("Calculated joint angles:", joint_action)
+            deg_min, deg_max = joint.get("degree_range", (-180, 180))
+
+            # Clamp degree angle within range
+            deg_clamped = max(min(angle_deg, deg_max), deg_min)
+
+            # Map degrees to encoder value
+            enc_value = int(
+                joint["range_min"] +
+                (deg_clamped - deg_min) / (deg_max - deg_min) * (joint["range_max"] - joint["range_min"])
+            )
+
+            enc_clamped = max(joint["range_min"], min(enc_value, joint["range_max"]))
+
+            joint_action[joint["name"]] = enc_clamped
+
+        print("Calculated joint encoder values:", joint_action)
+
         self.robot.send_action(joint_action)
         time.sleep(2)
 
@@ -128,14 +149,7 @@ class Arm:
             print("Robot disconnected.")
 
 
-INITIAL_POSITION  = {
-    "shoulder_pan.pos": 0, # -100-100
-    "shoulder_lift.pos": 0, # 0- 160
-    "elbow_flex.pos": 0,   # 0- -160
-    "wrist_flex.pos": 0,  # 0- -160
-    "wrist_roll.pos": -160,  # 0- -160
-    "gripper.pos": 0,  # 0-100
-}
+
 POINTER_POSITION = {
     "shoulder_pan.pos": 0, # -100-100
     "shoulder_lift.pos": 80, # 0- 160
@@ -149,5 +163,5 @@ POINTER_POSITION = {
 if __name__ == "__main__":
     arm = Arm()
     # arm.interactive_control()
-    # arm.move_to_position(INITIAL_POSITION)
-    arm.move_to_xyz(0, 0, 10)
+    arm.move_to_position(POINTER_POSITION)
+    # arm.move_to_xyz(0.1, 0.1, 0.1)
