@@ -25,7 +25,7 @@ class Arm:
             "rx": rx,
             "ry": ry,
             "rz": rz,
-            "open": open_val,
+            "open": 0.5,
             "max_trials": max_trials,
             "position_tolerance": position_tolerance,
             "orientation_tolerance": orientation_tolerance
