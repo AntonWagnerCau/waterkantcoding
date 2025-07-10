@@ -236,6 +236,7 @@ def main():
     # Initialize the LLM processor with the prompt logger
     llm_processor = LLMProcessor(prompt_logger=prompt_logger, spot_controller=spot_controller)
     audio_processor = AudioProcessor()
+    input_mode = "text"  # Modes: 'text' or 'voice'
     
     # Initialize and start the perception logger
     # Pass the state update function to the logger if it needs to update state directly
@@ -247,17 +248,42 @@ def main():
     
     # Main loop
     try:
-        schedule_state_update({"status": "Idle - Ready for command"}) 
+        schedule_state_update({"status": "Idle - Ready for command"})
         while True:
-            # Prompt the user for text input
-            print("Enter your command (or 'exit' to quit):")
-            text = input("> ").strip()
-            
+            if input_mode == "text":
+                print("Enter your command ('voice' to switch to voice input, 'exit' to quit):")
+                text = input("> ").strip()
+
+                if text.lower() == "voice":
+                    print("Switched to voice input mode.")
+                    input_mode = "voice"
+                    continue
+                if text.lower() in {"exit", "quit"}:
+                    print("Exiting SpotAgent.")
+                    break
+
+            elif input_mode == "voice":
+                if not audio_processor.is_recording:
+                    print("Listening for voice command ('text' to switch to text input)...")
+                    schedule_state_update({"status": "Listening..."})
+                    audio_processor.start_recording()
+
+                schedule_state_update({"status": "Listening..."})
+                text = audio_processor.get_transcription()
+
+                if not text:
+                    time.sleep(0.5)
+                    continue
+
+                print(f"Transcription received: {text}")
+                if text.lower() == "text":
+                    print("Switched to text input mode.")
+                    input_mode = "text"
+                    continue
+
+            # Now process the received command (same as your original processing)
             if not text:
-                continue  # Skip empty inputs
-            if text.lower() in {"exit", "quit"}:
-                print("Exiting SpotAgent.")
-                break
+                continue
 
             if text:
                 print(f"Transcription received: {text}")
