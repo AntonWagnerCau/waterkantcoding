@@ -4,8 +4,9 @@ import os
 import sys
 import io
 import tkinter as tk
+import math
 
-from PIL import Image, ImageTk, ImageDraw
+from PIL import Image, ImageTk, ImageDraw, ImageFont
 
 from spot_controller import SpotController, transform_point_for_rotation
 from dotenv import load_dotenv
@@ -43,7 +44,7 @@ def clear_and_print(vectors):
     if vectors:
         print("Person directions (unit vectors in body frame):")
         for i, v in enumerate(vectors, 1):
-            print(f"{i}: [{v[0]:+.3f}, {v[1]:+.3f}, {v[2]:+.3f}]")
+            print(f"{i}: [{v[0]:+.3f}, {v[1]:+.3f}, {v[2]:+.3f}, degrees: {v[3]:+.0f}]")
     else:
         print("No persons detected.")
 
@@ -149,6 +150,10 @@ def process_camera(spot: SpotController, camera_name: str, threshold: float = 0.
 
         vec_body = to_unit(np.array(ray_body))
         if vec_body is not None:
+            # calculate and display degrees
+            degree = vec_to_angle_deg(vec_body[0], vec_body[1])
+
+            vec_body.append(degree)
             vecs_body.append(vec_body)
 
     return vecs_body
@@ -211,6 +216,17 @@ class GuiApp:
                 width=2
             )
 
+            textoffset = 15
+            if vec[3] < 90 and vec[3] > 270:
+                textoffset = -15
+
+            text_x = center_x + dx - textoffset
+            text_y = center_y + dy - textoffset
+
+            font = ImageFont.load_default()
+
+            draw.text((text_x, text_y), str(round(vec[3])) + '°', fill="black", font=font)
+
         tk_image = ImageTk.PhotoImage(image)
 
         self.image_label.configure(image=tk_image)
@@ -230,6 +246,12 @@ class GuiApp:
         self.root.update_idletasks()
         self.root.update()
 
+def vec_to_angle_deg(x, y):
+    angle_rad = math.atan2(y, x)
+    angle_deg = math.degrees(angle_rad)
+    if angle_deg < 0:
+        angle_deg += 360
+    return angle_deg
 
 def main(cam_sources, loop_delay: float = 3):
     spot = SpotController()
