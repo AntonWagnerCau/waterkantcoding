@@ -20,6 +20,9 @@ from utils.timestamp_utils import parse_timestamp
 from bosdyn.client.ray_cast import RayCastClient
 from bosdyn.api import ray_cast_pb2
 import math # Import math for degrees conversion
+from bosdyn.api import geometry_pb2
+from bosdyn.geometry import EulerZXY
+import time
 
 # Helper function for coordinate transformation
 def transform_point_for_rotation(px, py, orig_w, orig_h, rot_w, rot_h, angle_deg):
@@ -234,7 +237,32 @@ class SpotController:
     def walk_backward(self, distance_meters):
         """Command the robot to walk backward"""
         return self.relative_move(-distance_meters, 0)
-    
+
+    def tilt(self, pitch=0.0, roll=0.0, yaw=0.0, bh=0.0):
+        """Command the robot to tilt its body with specified roll, pitch, yaw angles (in radians), and adjust body height (in meters)."""
+        if not self.connected:
+            print(f"Robot not connected, simulating tilt: roll={roll}, pitch={pitch}, yaw={yaw}, bh={bh}")
+            return True
+
+        try:
+            # Roll, pitch, yaw
+            orientation = EulerZXY(roll=roll, pitch=pitch, yaw=yaw)
+
+            # Create the stand command with tilted orientation and body height
+            cmd = RobotCommandBuilder.synchro_stand_command(
+                body_height=bh,
+                footprint_R_body=orientation
+            )
+
+            # Send the command
+            self.command_client.robot_command(cmd, end_time_secs=time.time() + 3)
+
+            return True
+
+        except Exception as e:
+            print(f"Error tilting: {e}")
+            return False
+
     def turn(self, degrees):
         """Command the robot to turn by specified degrees"""
         if not self.connected:

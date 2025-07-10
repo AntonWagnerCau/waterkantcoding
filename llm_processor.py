@@ -34,6 +34,7 @@ Available actions:
 - turn(degrees): Turn clockwise (positive) or counterclockwise (negative)
 - sit(): Make the robot sit
 - stand(): Make the robot stand up
+- tilt(pitch, roll, yaw, bh): Make the robot tilt its body with pitch, roll, yaw in radians or adjust its body height, 0 being the default for all.
 - task_complete(success, reason): Indicate that the task is complete with success status and reason
 
 
@@ -85,6 +86,11 @@ class SpotParameters(BaseModel):
     seconds: int = Field(None, description="Number of seconds to look back for logs")
     success: bool = Field(None, description="Whether the task was completed successfully")
     reason: str = Field(None, description="Reason for the task completion")
+    pitch: float = Field(None, description="Angle in radians to pitch head down (positive) or head up (negative)")
+    roll: float = Field(None, description="Angle in radians to roll")
+    yaw: float = Field(None, description="Angle in radians to yaw")
+    bh: float = Field(None, description="Body height in meters, to stand at relative to a nominal stand height")
+    
 
 class SpotCommand(BaseModel):
     """Command for Spot robot"""
