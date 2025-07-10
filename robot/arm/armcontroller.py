@@ -7,13 +7,14 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 urdf_path_config = os.path.join(current_dir, "geometry-config", "so101_new_calib.urdf")
 robot_config_path = os.path.join(current_dir, "calibration", "robot_one.json")
 jestsonIp = "192.168.10.235"
+jestsonIp = "127.0.0.1"
 
 
 class Arm:
 
     def move_to_xyz(self, x, y, z, rx=0, ry=0, rz=0, open_val=0,
                     max_trials=10, position_tolerance=0.03, orientation_tolerance=0.2, robot_id=0):
-        url = f"http://{jestsonIp}:3000/move/absolute?robot_id={robot_id}"
+        url = f"http://{jestsonIp}:80/move/absolute?robot_id={robot_id}"
         headers = {
             "accept": "application/json",
             "Content-Type": "application/json"

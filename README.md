@@ -18,7 +18,7 @@ sh utils/ssh-spot-login.sh
 
 ## Start Docker Services on Jetson
 
-Copy [start-docker-services.sh](start-docker-services.sh) and [docker-compose.yml](docker-admin/docker-compose.yml)
+Copy [start-docker-services.sh](start-docker-services.sh) and [docker-compose.yml](docker-compose.yml)
 and [Dockerfile](docker-admin/Dockerfile)  onto jetson
 Then run
 

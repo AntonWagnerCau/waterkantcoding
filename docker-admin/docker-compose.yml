@@ -1,8 +1,7 @@
-version: '3.8'
 services:
   phosphobot:
     build:
-      context: ..
+      context: .
       dockerfile: Dockerfile
     container_name: phosphobot-service
     privileged: true
@@ -11,6 +10,9 @@ services:
     ports:
       - "3000:80"
   yolo-api:
-    image: yolo-api
+    build:
+      context: ../yolo-api
+      dockerfile: Dockerfile
+    container_name: yolo-service
     ports:
       - "8085:8000"
