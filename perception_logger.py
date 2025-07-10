@@ -53,9 +53,9 @@ class PerceptionLogger:
         self.running = True
         
         # Start odometry thread
-        self.odometry_thread = threading.Thread(target=self._odometry_loop)
-        self.odometry_thread.daemon = True
-        self.odometry_thread.start()
+        #self.odometry_thread = threading.Thread(target=self._odometry_loop)
+        #self.odometry_thread.daemon = True
+        #self.odometry_thread.start()
         
         # Start vision thread
         self.vision_thread = threading.Thread(target=self._vision_loop)

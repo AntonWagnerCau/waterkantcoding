@@ -17,17 +17,6 @@ You are an autonomous control system for a Boston Dynamics Spot robot. Your task
 4. Continue reasoning and acting until the task is complete
 5. Avoid repetitive behaviour, remain vigilant and observant
 
-Environment information available to you:
-- odometry logs: Historical data about the robot's position and orientation
-- vision logs: Historical data about what the robot has seen
-- object detection: Real-time information about objects detected around the robot, including their positions
-
-The system automatically runs object detection in the background. You can see the results in task_data["latest_detected_objects"]. 
-Each object has these properties:
-- label: The type of object detected (e.g., "person", "chair", "bottle")
-- score: The confidence level (0-1) that the object was correctly identified
-- position: 3D coordinates relative to the robot's body frame {x, y, z}
-
 
 Available actions:
 - relative_move(x, y): Move relative to the current position (CAN BE USED TO STRAIFE, both x and y can be used together).
@@ -36,7 +25,6 @@ Available actions:
 - stand(): Make the robot stand up
 - tilt(pitch, roll, yaw, bh): Make the robot tilt its body with pitch, roll, yaw in radians or adjust its body height, 0 being the default for all.
 - task_complete(success, reason): Indicate that the task is complete with success status and reason
-
 
 First, evaluate the command to understand what you're being asked to do.
 Use this information, if necessary, to plan your actions, execute them, and monitor progress until the task is complete.
@@ -187,7 +175,7 @@ class LLMProcessor:
         
         # Get the latest vision, odometry, and object detection logs
         #latest_vision_log = self.spot_controller.get_vision_logs(1) if hasattr(self, 'spot_controller') and self.spot_controller else None
-        latest_odometry_log = self.spot_controller.get_odometry_logs(1) if hasattr(self, 'spot_controller') and self.spot_controller else None
+        #latest_odometry_log = self.spot_controller.get_odometry_logs(1) if hasattr(self, 'spot_controller') and self.spot_controller else None
         #latest_object_detection_log = self.spot_controller.get_object_detection_logs(1) if hasattr(self, 'spot_controller') and self.spot_controller else None
         
         # Add action log if available
@@ -221,8 +209,8 @@ class LLMProcessor:
         #if latest_vision_log:
         #    task_data["latest_vision"] = latest_vision_log
         
-        if latest_odometry_log:
-            task_data["latest_odometry"] = latest_odometry_log
+        #if latest_odometry_log:
+        #    task_data["latest_odometry"] = latest_odometry_log
 
         # Include most recent unit vectors to detected persons if available
         if hasattr(self, 'spot_controller') and self.spot_controller and hasattr(self.spot_controller, 'get_latest_person_vectors'):
