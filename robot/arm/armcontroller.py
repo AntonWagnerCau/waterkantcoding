@@ -1,15 +1,6 @@
 import os
-import json
-import time
-from pathlib import Path
 
-import numpy as np
 import requests
-from ikpy.chain import Chain
-
-from lerobot.robots.so100_follower import SO100FollowerConfig
-from robot.arm.lerobot.robots.so100_follower import SO100Follower
-from robot.arm.lerobot.robots.so101_follower import SO101Follower
 
 # === Load paths ===
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -48,10 +39,7 @@ class Arm:
             print("Failed to send move command:", e)
 
 
-if __name__ == "__main__":
 
-    arm = Arm()
-    arm.move_to_xyz(0, 0, 0)
 
 
 

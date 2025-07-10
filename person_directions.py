@@ -16,8 +16,14 @@ from bosdyn.client import frame_helpers
 
 # HTTP session to reuse across calls
 import requests
-
-YOLO_API_URL = os.getenv("YOLO_API_URL", "http://localhost:8000")
+cam_sources = [
+    "frontright_fisheye_image",
+    # "frontleft_fisheye_image",
+    # "left_fisheye_image",
+    # "right_fisheye_image",
+    # "back_fisheye_image",
+]
+YOLO_API_URL = os.getenv("YOLO_API_URL", "http://192.168.10.235:8085")
 SESSION = requests.Session()
 
 # Load environment variables
@@ -230,10 +236,25 @@ class GuiApp:
         self.root.update_idletasks()
         self.root.update()
 
+def get_persons(cam_src=cam_sources, loop_delay: float = 3):
+    spot = SpotController()
+    if not spot.connect():
+        print("Failed to connect to Spot.")
+        return
+
+    try:
+        while True:
+            vectors = []
+            for cam in cam_src:
+                vectors.extend(process_camera(spot, cam))
+            time.sleep(loop_delay)
+            return vectors
+    finally:
+        spot.disconnect()
 
 def main(cam_sources, loop_delay: float = 3):
     spot = SpotController()
-    if not spot.connect('image'):
+    if not spot.connect():
         print("Failed to connect to Spot.")
         return
 
@@ -255,19 +276,13 @@ def main(cam_sources, loop_delay: float = 3):
     finally:
         spot.disconnect()
 
-cam_sources = [
-        "frontright_fisheye_image",
-        "frontleft_fisheye_image",
-        "left_fisheye_image",
-        "right_fisheye_image",
-        "back_fisheye_image",
-    ]
+
 
 current_images = {name: io.BytesIO() for name in cam_sources}
 
 # GUI erstellen
-root = tk.Tk()
-guiApp = GuiApp(root, cam_sources, current_images)
+# root = tk.Tk()
+# guiApp = GuiApp(root, cam_sources, current_images)
 
-if __name__ == "__main__":
-    main(cam_sources)
+# if __name__ == "__main__":
+#     main(cam_sources)
