@@ -77,7 +77,31 @@ class SpotController:
         # List of latest unit direction vectors to detected persons (in body frame)
         # Updated asynchronously by PerceptionLogger. Each entry is a [x, y, z] unit vector.
         self.latest_person_vectors = []
-        
+
+        self.BASE_URL = "http://192.168.10.235:3000"
+        self.init_robot()
+        self.move_absolute(x=-50, y=50, z=0, rx=0, ry=0, rz=0)
+
+    ##########################################################################
+    def init_robot(self, robot_id=1):
+        url = f"{self.BASE_URL}/move/init"
+        response = requests.post(url, params={"robot_id": robot_id})
+        print("Init:", response.status_code, response.json())
+    
+    def move_absolute(self, x, y, z, rx=0, ry=0, rz=0):
+        url = f"{self.BASE_URL}/move/absolute"
+        payload = {
+            "x": x,
+            "y": y,
+            "z": z,
+            "rx": rx,
+            "ry": ry,
+            "rz": rz
+        }
+
+    #########################################################################    
+    response = requests.post(url, json=payload)
+    print("Move Absolute:", response.status_code, response.json())
     def connect(self, mode='body'):
         """Connect to the Spot robot"""
         try:
@@ -270,6 +294,16 @@ class SpotController:
 
         except Exception as e:
             print(f"Error tilting: {e}")
+            return False
+        
+    def rotate_arm(self, armx=0.0, army=0.0, armz=0.0):
+        """Command the robot to tilt its body with specified roll, pitch, yaw angles (in radians), and adjust body height (in meters)."""
+        # Roll, pitch, yaw
+        try:
+            self.move_absolute(x=armx, y=army, z=armz, rx=0, ry=0, rz=0)
+            return True
+        except Exception as e:
+            print(f"Error moving arm: {e}")
             return False
 
     def turn(self, degrees):
