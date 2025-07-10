@@ -82,7 +82,6 @@ class SpotController:
         self.init_robot()
         self.move_absolute(x=-50, y=50, z=0, rx=0, ry=0, rz=0)
 
-    ##########################################################################
     def init_robot(self, robot_id=1):
         url = f"{self.BASE_URL}/move/init"
         response = requests.post(url, params={"robot_id": robot_id})
@@ -99,9 +98,8 @@ class SpotController:
             "rz": rz
         }
 
-    #########################################################################    
-    response = requests.post(url, json=payload)
-    print("Move Absolute:", response.status_code, response.json())
+        response = requests.post(url, json=payload)
+        print("Move Absolute:", response.status_code, response.json())
     def connect(self, mode='body'):
         """Connect to the Spot robot"""
         try:
@@ -300,7 +298,7 @@ class SpotController:
         """Command the robot to tilt its body with specified roll, pitch, yaw angles (in radians), and adjust body height (in meters)."""
         # Roll, pitch, yaw
         try:
-            self.move_absolute(x=armx, y=army, z=armz, rx=0, ry=0, rz=0)
+            self.move_absolute(x=armx * 50.0, y=army * 50.0, z=armz * 50.0, rx=0, ry=0, rz=0)
             return True
         except Exception as e:
             print(f"Error moving arm: {e}")
