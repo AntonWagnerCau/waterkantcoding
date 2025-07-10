@@ -2,18 +2,19 @@ import os
 import requests
 import json
 import time
+from typing import Optional
 from google import genai
 from pydantic import BaseModel, Field
 from utils.timestamp_utils import parse_timestamp
 from spot_controller import SpotController
 
 
-# LLM System Prompt for Spot control
+# LLM System Prompt for Spot control with So101 robot arm
 SPOT_SYSTEM_PROMPT = """
-You are an autonomous control system for a Boston Dynamics Spot robot. Your task is to:
+You are an autonomous control system for a Boston Dynamics Spot robot equipped with a So101 robot arm via phosphobot. Your task is to:
 1. Interpret human voice or text commands
 2. Reason about the environment and robot state
-3. Plan and execute actions to complete tasks
+3. Plan and execute actions to complete tasks including precise manipulation
 4. Continue reasoning and acting until the task is complete
 5. Avoid repetitive behaviour, remain vigilant and observant
 
@@ -23,7 +24,6 @@ Environment information available to you:
 The system automatically runs person detection in the background and provides:
 - position: 3D coordinates relative to the robot's body frame {x, y, z}
 
-
 Available actions:
 - relative_move(x, y): Move relative to the current position (CAN BE USED TO STRAIFE, both x and y can be used together).
 - turn(degrees): Turn clockwise (positive) or counterclockwise (negative)
@@ -31,7 +31,29 @@ Available actions:
 - stand(): Make the robot stand up
 - tilt(pitch, roll, yaw, bh): Make the robot tilt its body with pitch, roll, yaw in radians or adjust its body height, 0 being the default for all.
 - task_complete(success, reason): Indicate that the task is complete with success status and reason
-- rotate_arm(armx, army, armz): Rotate the mounted robot arm 
+
+Robot Arm Control (So101 via phosphobot):
+- arm_move_absolute(armx, army, armz, rx, ry, rz, open, max_trials, position_tolerance, orientation_tolerance): 
+  Move arm to absolute position in 3D space with orientation and gripper control
+  * x, y, z: Cartesian coordinates in meters (range: -40.0 to +40.0 for x,y; 0.0 to 60.0 for z) x is foward, y is left, z is up
+  * rx, ry, rz: Orientation in degrees (roll, pitch, yaw)
+  * open: Gripper state 0.0=closed to 1.0=fully open
+  * max_trials: Maximum attempts to reach position (1-50, default 10)
+  * position_tolerance: Position accuracy in meters (0.001-0.1, default 0.03)
+  * orientation_tolerance: Orientation accuracy in radians (0.01-1.0, default 0.2)
+
+- arm_move_relative(dx, dy, dz, drx, dry, drz): Move arm relative to current position
+  * dx, dy, dz: Relative position change in cm (range: ±40cm for dx,dy; ±60cm for dz) dx is forward, dy is left, dz is up
+  * drx, dry, drz: Relative orientation change in degrees
+- arm_home(): Move arm to home/safe position (0,0,0,0,0,0)
+- gripper_control(open): Control gripper independently (0.0=closed, 1.0=open)
+
+Robot Arm Workspace:
+- Position range: x=+-40cm, y=+-40.cm, z=0.0-60cm from robot base
+- Orientation: Full 6-DOF control within joint limits
+- Precision: Can achieve 1mm position accuracy and 0.57 Degrees orientation accuracy
+
+ANY ARM COMMAND THAT IS LESS THAN 1.0 IS INVALID. YOU ARE DEALING WITH CM NOT METERS. 
 
 First, evaluate the command to understand what you're being asked to do.
 Use this information, if necessary, to plan your actions, execute them, and monitor progress until the task is complete.
@@ -41,8 +63,8 @@ Try not to repeat your actions needlessly.
 ALWAYS MAKE SURE YOUR ACTIONS COMPLY WITH YOUR THOUGHTS.
 
 DO NOT REPEAT ACTIONS WITHOUT REASON. CONSIDER IT A DONE TASK
-DO NOT NEDLESSLY "MONITOR". IDLING IS MONITORING. THERE IS NO ACTIVE "MONITORING" ACTION. CONSIDER IT A DONE TASK
-DO NOT NEDLESSLY "STAND". IDLING IS STANDING. THERE IS NO ACTIVE "STANDING" ACTION. CONSIDER IT A DONE TASK
+DO NOT NEEDLESSLY "MONITOR". IDLING IS MONITORING. THERE IS NO ACTIVE "MONITORING" ACTION. CONSIDER IT A DONE TASK
+DO NOT NEEDLESSLY "STAND". IDLING IS STANDING. THERE IS NO ACTIVE "STANDING" ACTION. CONSIDER IT A DONE TASK
 
 Respond ONLY with valid JSON in this format:
 {
@@ -55,14 +77,14 @@ Respond ONLY with valid JSON in this format:
     }
 }
 
-Example response for "move forward 1 meter":
+Example response for "pick up the object infront of you":
 {
-    "thought": "I need to move forward 1 meter",
-    "action": "relative_move",
-    "parameters": {"x": 1},
+    "thought": "I need to move the arm to grasp the object, first moving to position forward, then closing gripper",
+    "action": "arm_move_absolute",
+    "parameters": {"x": 30.0, "y": 0.0, "z": 10.0, "rx": 0, "ry": 0, "rz": 0, "open": 1.0, "max_trials": 10, "position_tolerance": 0.01, "orientation_tolerance": 0.1},
     "task_status": {
-        "complete": true,
-        "reason": "Moved forward 1 meter"
+        "complete": false,
+        "reason": "Moving arm to object position with gripper open"
     }
 }
 """
@@ -75,20 +97,41 @@ class TaskStatus(BaseModel):
 
 class SpotParameters(BaseModel):
     """Parameters for Spot robot commands"""
-    x: float = Field(None, description="Distance in meters to move forward (positive) or backward (negative)")
-    y: float = Field(None, description="Distance in meters to move left (positive) or right (negative)")
-    degrees: float = Field(None, description="Degrees to turn (positive for clockwise, negative for counterclockwise)")
-    seconds: int = Field(None, description="Number of seconds to look back for logs")
-    success: bool = Field(None, description="Whether the task was completed successfully")
-    reason: str = Field(None, description="Reason for the task completion")
-    pitch: float = Field(None, description="Angle in radians to pitch head down (positive) or head up (negative)")
-    roll: float = Field(None, description="Angle in radians to roll")
-    yaw: float = Field(None, description="Angle in radians to yaw")
-    bh: float = Field(None, description="Body height in meters, to stand at relative to a nominal stand height")
-    armx: float = Field(None, description="The X-Component of the robot arm gripper position")
-    army: float = Field(None, description="The Y-Component of the robot arm gripper position")
-    armz: float = Field(None, description="The Z-Component of the robot arm gripper position")
+    # Basic robot body movement parameters (for relative_move, turn, etc)
+    x: Optional[float] = Field(None, description="BODY: Distance in meters to move forward (positive) or backward (negative)")
+    y: Optional[float] = Field(None, description="BODY: Distance in meters to move left (positive) or right (negative)")
+    degrees: Optional[float] = Field(None, description="BODY: Degrees to turn (positive for clockwise, negative for counterclockwise)")
+    seconds: Optional[int] = Field(None, description="Number of seconds to look back for logs")
+    success: Optional[bool] = Field(None, description="Whether the task was completed successfully")
+    reason: Optional[str] = Field(None, description="Reason for the task completion")
     
+    # Body control parameters
+    pitch: Optional[float] = Field(None, description="BODY: Angle in radians to pitch head down (positive) or head up (negative)")
+    roll: Optional[float] = Field(None, description="BODY: Angle in radians to roll")
+    yaw: Optional[float] = Field(None, description="BODY: Angle in radians to yaw")
+    bh: Optional[float] = Field(None, description="BODY: Body height in meters, to stand at relative to a nominal stand height")
+    
+    # Robot arm absolute positioning (So101 phosphobot format) - range ±0.4m x,y; 0-0.6m z
+    armx: Optional[float] = Field(None, description="ARM: X-Component of the robot arm gripper position in cm (range: -40.0 to +40.0)")
+    army: Optional[float] = Field(None, description="ARM: Y-Component of the robot arm gripper position in cm (range: -40.0 to +40.0)")
+    armz: Optional[float] = Field(None, description="ARM: Z-Component of the robot arm gripper position in cm (range: 0.0 to 60.0)")
+    rx: Optional[float] = Field(None, description="ARM: Roll rotation of the gripper in radians")
+    ry: Optional[float] = Field(None, description="ARM: Pitch rotation of the gripper in radians") 
+    rz: Optional[float] = Field(None, description="ARM: Yaw rotation of the gripper in radians")
+    open: Optional[float] = Field(None, description="ARM: Gripper state: 0.0=closed, 1.0=fully open")
+    
+    # Robot arm relative movement
+    dx: Optional[float] = Field(None, description="ARM: Relative X movement in cm (range: ±40cm)")
+    dy: Optional[float] = Field(None, description="ARM: Relative Y movement in cm (range: ±40cm)")
+    dz: Optional[float] = Field(None, description="ARM: Relative Z movement in cm (range: ±60cm)")
+    drx: Optional[float] = Field(None, description="ARM: Relative roll rotation in degrees")
+    dry: Optional[float] = Field(None, description="ARM: Relative pitch rotation in degrees")
+    drz: Optional[float] = Field(None, description="ARM: Relative yaw rotation in degrees")
+    
+    # Robot arm control parameters
+    max_trials: Optional[int] = Field(None, description="Maximum attempts to reach target position (1-50)")
+    position_tolerance: Optional[float] = Field(None, description="Position accuracy tolerance in meters (0.001-0.1)")
+    orientation_tolerance: Optional[float] = Field(None, description="Orientation accuracy tolerance in radians (0.01-1.0)")
 
 class SpotCommand(BaseModel):
     """Command for Spot robot"""
@@ -117,7 +160,7 @@ class LLMProcessor:
         self.prompt_logger = prompt_logger
         
         # Store spot controller reference for accessing logs
-        self.spot_controller : SpotController = spot_controller
+        self.spot_controller: Optional[SpotController] = spot_controller
         
         if self.provider == "ollama":
             self._setup_ollama()
@@ -223,7 +266,7 @@ class LLMProcessor:
         #    task_data["latest_odometry"] = latest_odometry_log
 
         # Include most recent unit vectors to detected persons if available
-        if hasattr(self, 'spot_controller') and self.spot_controller and hasattr(self.spot_controller, 'get_latest_person_vectors'):
+        if self.spot_controller and hasattr(self.spot_controller, 'get_latest_person_vectors'):
             latest_person_vectors = self.spot_controller.get_latest_person_vectors()
             if latest_person_vectors:
                 task_data["latest_person_vectors"] = latest_person_vectors
@@ -357,8 +400,22 @@ class LLMProcessor:
             # Check if we have a parsed response (Pydantic model)
             result = None
             if response.parsed is not None:
-                # Convert Pydantic object to dictionary
-                result = response.parsed.model_dump()
+                # Handle different types of parsed responses
+                if isinstance(response.parsed, dict):
+                    result = response.parsed
+                elif hasattr(response.parsed, 'model_dump') and callable(getattr(response.parsed, 'model_dump', None)):
+                    try:
+                        result = response.parsed.model_dump()  # type: ignore
+                    except AttributeError:
+                        result = None
+                else:
+                    # Try to convert to JSON via text representation
+                    try:
+                        result = json.loads(str(response.parsed))
+                    except (json.JSONDecodeError, TypeError):
+                        # If all else fails, try to extract from response text
+                        if hasattr(response, 'text'):
+                            result = self._extract_json_from_text(response.text)
             elif hasattr(response, 'text'):
                 # Fallback to text parsing if structured parsing fails
                 result = self._extract_json_from_text(response.text)
