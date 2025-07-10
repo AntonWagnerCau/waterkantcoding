@@ -11,7 +11,7 @@ env/
 __pycache__/
 *.py[cod]
 *$py.class
-
+spotvenv/
 # Spot robot image files
 spot_image_*.jpg
 
