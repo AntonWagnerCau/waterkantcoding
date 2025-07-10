@@ -1,0 +1,26 @@
+import requests
+
+BASE_URL = "http://192.168.10.235:3000"
+
+def init_robot(robot_id=1):
+    url = f"{BASE_URL}/move/init"
+    response = requests.post(url, params={"robot_id": robot_id})
+    print("Init:", response.status_code, response.json())
+
+def move_absolute(x, y, z, rx=0, ry=0, rz=0):
+    url = f"{BASE_URL}/move/absolute"
+    payload = {
+        "x": x,
+        "y": y,
+        "z": z,
+        "rx": rx,
+        "ry": ry,
+        "rz": rz
+    }
+    response = requests.post(url, json=payload)
+    print("Move Absolute:", response.status_code, response.json())
+
+# Example usage
+if __name__ == "__main__":
+    init_robot()
+    move_absolute(x=-50, y=50, z=0, rx=0, ry=0, rz=0)
