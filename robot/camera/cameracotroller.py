@@ -11,6 +11,7 @@ class CameraController:
         self.interval = interval
         self.cap = None
         self.running = False
+        self.detections = []
 
     def start_camera(self):
         self.cap = cv2.VideoCapture(self.camera_id)
@@ -32,7 +33,7 @@ class CameraController:
         ret, frame = self.cap.read()
         if not ret:
             print("❌ Failed to capture frame.")
-            return
+            return []
 
         _, img_encoded = cv2.imencode('.jpg', frame)
         image_bytes = img_encoded.tobytes()
@@ -44,12 +45,16 @@ class CameraController:
             detections = response.json().get("detections", [])
             print(f"✅ Detected {len(detections)} person(s)")
             self.draw_boxes(frame, detections)
-            return  detections
+            self.detections = detections
         except requests.RequestException as e:
             print("⚠️ Request failed:", e)
+            detections = []
 
+        # Always show the camera feed, even if request failed
         cv2.imshow("Camera Feed (Press 'q' to quit)", frame)
 
+    def getDetections(self):
+        return self.detections
     def run(self):
         self.start_camera()
         try:

@@ -1,28 +1,20 @@
 import os
-import json
-import time
-from pathlib import Path
 
-import numpy as np
 import requests
-from ikpy.chain import Chain
-
-from lerobot.robots.so100_follower import SO100FollowerConfig
-from robot.arm.lerobot.robots.so100_follower import SO100Follower
-from robot.arm.lerobot.robots.so101_follower import SO101Follower
 
 # === Load paths ===
 current_dir = os.path.dirname(os.path.abspath(__file__))
 urdf_path_config = os.path.join(current_dir, "geometry-config", "so101_new_calib.urdf")
 robot_config_path = os.path.join(current_dir, "calibration", "robot_one.json")
-jestsonIp = "192.168.10.235"
+jestsonIp = "192.168.10.235:3000"
+jestsonIp = "127.0.0.1:80"
 
 
 class Arm:
 
     def move_to_xyz(self, x, y, z, rx=0, ry=0, rz=0, open_val=0,
                     max_trials=10, position_tolerance=0.03, orientation_tolerance=0.2, robot_id=0):
-        url = f"http://{jestsonIp}:3000/move/absolute?robot_id={robot_id}"
+        url = f"http://{jestsonIp}/move/absolute?robot_id={robot_id}"
         headers = {
             "accept": "application/json",
             "Content-Type": "application/json"
@@ -35,9 +27,9 @@ class Arm:
             "ry": ry,
             "rz": rz,
             "open": open_val,
-            "max_trials": max_trials,
-            "position_tolerance": position_tolerance,
-            "orientation_tolerance": orientation_tolerance
+            # "max_trials": max_trials,
+            # "position_tolerance": position_tolerance,
+            # "orientation_tolerance": orientation_tolerance
         }
 
         try:
