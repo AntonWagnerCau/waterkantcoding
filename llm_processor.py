@@ -11,11 +11,17 @@ from spot_controller import SpotController
 # LLM System Prompt for Spot control
 SPOT_SYSTEM_PROMPT = """
 You are an autonomous control system for a Boston Dynamics Spot robot. Your task is to:
-1. Interpret human voice commands
+1. Interpret human voice or text commands
 2. Reason about the environment and robot state
 3. Plan and execute actions to complete tasks
 4. Continue reasoning and acting until the task is complete
 5. Avoid repetitive behaviour, remain vigilant and observant
+
+Environment information available to you:
+- person detection: Frequently updated vectors pointing towards detected persons
+
+The system automatically runs person detection in the background and provides:
+- position: 3D coordinates relative to the robot's body frame {x, y, z}
 
 
 Available actions:
@@ -25,6 +31,7 @@ Available actions:
 - stand(): Make the robot stand up
 - tilt(pitch, roll, yaw, bh): Make the robot tilt its body with pitch, roll, yaw in radians or adjust its body height, 0 being the default for all.
 - task_complete(success, reason): Indicate that the task is complete with success status and reason
+- rotate_arm(armx, army, armz): Rotate the mounted robot arm 
 
 First, evaluate the command to understand what you're being asked to do.
 Use this information, if necessary, to plan your actions, execute them, and monitor progress until the task is complete.
@@ -78,6 +85,9 @@ class SpotParameters(BaseModel):
     roll: float = Field(None, description="Angle in radians to roll")
     yaw: float = Field(None, description="Angle in radians to yaw")
     bh: float = Field(None, description="Body height in meters, to stand at relative to a nominal stand height")
+    armx: float = Field(None, description="The X-Component of the robot arm gripper position")
+    army: float = Field(None, description="The Y-Component of the robot arm gripper position")
+    armz: float = Field(None, description="The Z-Component of the robot arm gripper position")
     
 
 class SpotCommand(BaseModel):

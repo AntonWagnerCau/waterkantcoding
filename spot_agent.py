@@ -384,6 +384,15 @@ def main():
 
                         )
                         action_result = {"success": result}
+
+                    elif action == 'rotate_arm':
+                        result = spot_controller.rotate_arm(
+                            params.get('armx', 0) or 0, 
+                            params.get('army', 0) or 0,
+                            params.get('armz', 0) or 0
+
+                    )
+                        action_result = {"success": result}
                     
                     elif action == 'task_complete':
                         # The LLM has decided the task is complete
