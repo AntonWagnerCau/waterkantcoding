@@ -75,7 +75,7 @@ class SpotController:
         self.ray_cast_client = None
         self.yolo_api_url = os.getenv("YOLO_API_URL", "http://134.245.232.230:8002")
         
-    def connect(self):
+    def connect(self, mode='body'):
         """Connect to the Spot robot"""
         try:
             sdk = create_standard_sdk("SpotAgentClient")
@@ -93,14 +93,20 @@ class SpotController:
             self.robot.authenticate(username, password)
             
             self.robot.time_sync.wait_for_sync()
-            
+
+            self.image_client: ImageClient = self.robot.ensure_client(ImageClient.default_service_name)
+            self.ray_cast_client: RayCastClient = self.robot.ensure_client(RayCastClient.default_service_name)
+
+            if mode=='image':
+                self.connected = True
+                return True
+
             self.lease_client : LeaseClient = self.robot.ensure_client('lease')
             self.lease = self.lease_client.take()
-            
+
             self.command_client : RobotCommandClient = self.robot.ensure_client(RobotCommandClient.default_service_name)
             self.state_client : RobotStateClient = self.robot.ensure_client(RobotStateClient.default_service_name)
-            self.image_client : ImageClient = self.robot.ensure_client(ImageClient.default_service_name)
-            self.ray_cast_client : RayCastClient = self.robot.ensure_client(RayCastClient.default_service_name)
+
             print("Base clients created.")
 
             self.robot.power_on(timeout_sec=20)
@@ -321,7 +327,7 @@ class SpotController:
             print(f"Error standing: {e}")
             return False
 
-    def take_pictures(self, camera_names=["frontleft_fisheye_image", "frontright_fisheye_image"]):
+    def take_pictures(self, camera_names=["frontleft_fisheye_image", "frontright_fisheye_image", "back_fisheye_image", "left_fisheye_image", "right_fisheye_image"]):
         """Capture an image from the robot's front camera"""
         if not self.connected:
             # In simulation mode, use a placeholder timestamp
