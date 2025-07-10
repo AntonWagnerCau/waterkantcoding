@@ -26,3 +26,4 @@ node_modules
 *.png
 *.jpg
 /images
+!assets/*.jpg
