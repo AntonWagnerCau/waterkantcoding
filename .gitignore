@@ -2,6 +2,7 @@
 .env
 
 # Python virtual environment
+.venv/
 venv/
 .venv/
 spotvenv/**
@@ -29,3 +30,4 @@ node_modules
 *.png
 *.jpg
 /images
+!assets/*.jpg

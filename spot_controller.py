@@ -334,16 +334,50 @@ class SpotController:
         except Exception as e:
             print(f"Error taking pictures: {e}")
             return None
+
+    def get_images(self, camera_names=["frontleft_fisheye_image", "frontright_fisheye_image"]):
+        """Capture images from the robot's cameras and keep them in memory as PIL Images"""
+        if not self.connected:
+            # In simulation mode, create a simple test image
+            img = Image.new('RGB', (640, 480), color=(73, 109, 137))
+            img = img.rotate(90, expand=True)  # Rotate simulation image too
+            return [img]
+        
+        try:
+            # Get image client
+            image_client : ImageClient = self.robot.ensure_client('image')
+            
+            # Request image from front camera
+            request = [build_image_request(source, image_format=image_pb2.Image.Format.FORMAT_JPEG, pixel_format=image_pb2.Image.PixelFormat.PIXEL_FORMAT_RGB_U8) for source in camera_names]
+            image_response = image_client.get_image(request)
+            
+            # Process images in memory
+            images = []
+            for i, image_data in enumerate(image_response): 
+                # Convert image data to PIL Image
+                image = Image.open(io.BytesIO(image_data.shot.image.data))
+                
+                # Apply rotations based on camera name
+                if "frontleft" in camera_names[i] or "frontright" in camera_names[i]:
+                    image = image.rotate(-90, expand=True)  # -90 for clockwise rotation
+                elif "right" in camera_names[i]:
+                    image = image.rotate(180, expand=True)
+                
+                images.append(image)
+            return images
+        except Exception as e:
+            print(f"Error taking pictures in memory: {e}")
+            return None
     
     def disconnect(self):
         """Disconnect from the robot"""
         if self.connected:
             try:
+                self.robot.power_off(cut_immediately=False)
                 # Return the lease
-                self.lease_client.return_lease(self.lease)
                 
                 # Power off robot
-                self.robot.power_off(cut_immediately=False)
+                self.lease_client.return_lease(self.lease)
                 
                 self.connected = False
                 print("Disconnected from Spot")

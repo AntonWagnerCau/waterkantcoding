@@ -4,7 +4,7 @@ from PIL import Image, ImageDraw
 import io
 import time
 
-def test_yolos_api(image_path, api_url="http://134.245.232.230:8002"):
+def test_yolos_api(image_path, api_url="http://127.0.0.1:8000"):
     """Test the YOLOS API with a local image"""
     
     # Send image to API
@@ -29,24 +29,23 @@ def test_yolos_api(image_path, api_url="http://134.245.232.230:8002"):
     detections = results.get("detections", [])
     
     print(f"Found {len(detections)} objects:")
+
     for i, detection in enumerate(detections):
-        print(f"{i+1}. {detection['label']} ({detection['score']}): {detection['box']}")
+        print(f"{i+1}. ({detection['confidence']}): {detection['bbox']}")
     
     # Visualize results
     img = Image.open(image_path)
     draw = ImageDraw.Draw(img)
     
     for detection in detections:
-        box = detection["box"]
-        label = detection["label"]
-        score = detection["score"]
-        
+        bbox = detection["bbox"]
+
         # Draw box
-        draw.rectangle(box, outline="red", width=3)
+        draw.rectangle(bbox, outline="red", width=3)
         
         # Draw label
-        text = f"{label} {score}"
-        draw.text((box[0], box[1] - 10), text, fill="red")
+        #text = f"{label} {score}"
+    #    draw.text((box[0], box[1] - 10), text, fill="red")
     
     # Save result
     output_path = "detection_result.jpg"
@@ -55,4 +54,4 @@ def test_yolos_api(image_path, api_url="http://134.245.232.230:8002"):
 
 if __name__ == "__main__":
     
-    test_yolos_api("test.png") 
+    test_yolos_api("../images/spot_image_frontright_fisheye_image_1752055740.jpg")
