@@ -20,6 +20,9 @@ from utils.timestamp_utils import parse_timestamp
 from bosdyn.client.ray_cast import RayCastClient
 from bosdyn.api import ray_cast_pb2
 import math # Import math for degrees conversion
+from bosdyn.api import geometry_pb2
+from bosdyn.geometry import EulerZXY
+import time
 
 # Helper function for coordinate transformation
 def transform_point_for_rotation(px, py, orig_w, orig_h, rot_w, rot_h, angle_deg):
@@ -70,9 +73,12 @@ class SpotController:
         
         self.image_client = None
         self.ray_cast_client = None
-        self.yolo_api_url = os.getenv("YOLO_API_URL", "http://134.245.232.230:8002")
+        self.yolo_api_url = os.getenv("YOLO_API_URL", "http://192.168.10.235:8085")
+        # List of latest unit direction vectors to detected persons (in body frame)
+        # Updated asynchronously by PerceptionLogger. Each entry is a [x, y, z] unit vector.
+        self.latest_person_vectors = []
         
-    def connect(self):
+    def connect(self, mode='body'):
         """Connect to the Spot robot"""
         try:
             sdk = create_standard_sdk("SpotAgentClient")
@@ -90,14 +96,20 @@ class SpotController:
             self.robot.authenticate(username, password)
             
             self.robot.time_sync.wait_for_sync()
-            
+
+            self.image_client: ImageClient = self.robot.ensure_client(ImageClient.default_service_name)
+            self.ray_cast_client: RayCastClient = self.robot.ensure_client(RayCastClient.default_service_name)
+
+            if mode=='image':
+                self.connected = True
+                return True
+
             self.lease_client : LeaseClient = self.robot.ensure_client('lease')
             self.lease = self.lease_client.take()
-            
+
             self.command_client : RobotCommandClient = self.robot.ensure_client(RobotCommandClient.default_service_name)
             self.state_client : RobotStateClient = self.robot.ensure_client(RobotStateClient.default_service_name)
-            self.image_client : ImageClient = self.robot.ensure_client(ImageClient.default_service_name)
-            self.ray_cast_client : RayCastClient = self.robot.ensure_client(RayCastClient.default_service_name)
+
             print("Base clients created.")
 
             self.robot.power_on(timeout_sec=20)
@@ -234,7 +246,32 @@ class SpotController:
     def walk_backward(self, distance_meters):
         """Command the robot to walk backward"""
         return self.relative_move(-distance_meters, 0)
-    
+
+    def tilt(self, pitch=0.0, roll=0.0, yaw=0.0, bh=0.0):
+        """Command the robot to tilt its body with specified roll, pitch, yaw angles (in radians), and adjust body height (in meters)."""
+        if not self.connected:
+            print(f"Robot not connected, simulating tilt: roll={roll}, pitch={pitch}, yaw={yaw}, bh={bh}")
+            return True
+
+        try:
+            # Roll, pitch, yaw
+            orientation = EulerZXY(roll=roll, pitch=pitch, yaw=yaw)
+
+            # Create the stand command with tilted orientation and body height
+            cmd = RobotCommandBuilder.synchro_stand_command(
+                body_height=bh,
+                footprint_R_body=orientation
+            )
+
+            # Send the command
+            self.command_client.robot_command(cmd, end_time_secs=time.time() + 3)
+
+            return True
+
+        except Exception as e:
+            print(f"Error tilting: {e}")
+            return False
+
     def turn(self, degrees):
         """Command the robot to turn by specified degrees"""
         if not self.connected:
@@ -293,7 +330,7 @@ class SpotController:
             print(f"Error standing: {e}")
             return False
 
-    def take_pictures(self, camera_names=["frontleft_fisheye_image", "frontright_fisheye_image"]):
+    def take_pictures(self, camera_names=["frontleft_fisheye_image", "frontright_fisheye_image", "back_fisheye_image", "left_fisheye_image", "right_fisheye_image"]):
         """Capture an image from the robot's front camera"""
         if not self.connected:
             # In simulation mode, use a placeholder timestamp
@@ -1070,3 +1107,131 @@ class SpotController:
         except Exception as e:
             print(f"Error retrieving object detection logs: {e}")
             return {"error": str(e)}
+
+    # ------------------------------------------------------------------
+    # Person direction helpers
+    # ------------------------------------------------------------------
+
+    def get_latest_person_vectors(self):
+        """Return most recently detected list of unit direction vectors to persons.
+
+        The vectors are expressed in the robot BODY frame and normalised to length 1.
+        An empty list indicates no persons detected or detection not yet run.
+        """
+        return self.latest_person_vectors
+
+    def get_person_direction_vectors(self, threshold: float = 0.25):
+        """Get unit direction vectors to detected persons using the logic from person_directions.py
+        
+        Args:
+            threshold: Detection threshold for YOLO API
+            
+        Returns:
+            List of unit direction vectors in body frame, each as [x, y, z]
+        """
+        def to_unit(vec):
+            """Normalize a 3-element NumPy vector. Return None if zero length."""
+            n = np.linalg.norm(vec)
+            if n == 0:
+                return None
+            return (vec / n).tolist()
+
+        def rotation_for_camera(src: str) -> int:
+            """Return rotation angle (degrees) needed to make image upright for detection."""
+            if src in ("frontleft_fisheye_image", "frontright_fisheye_image"):
+                return -90  # clockwise
+            if src == "right_fisheye_image":
+                return 180
+            return 0
+
+        cam_sources = [
+            "frontright_fisheye_image",
+            "frontleft_fisheye_image", 
+            "left_fisheye_image",
+            "right_fisheye_image",
+            "back_fisheye_image",
+        ]
+        
+        all_vectors = []
+        
+        for camera_name in cam_sources:
+            # Get image and metadata
+            image_resp, err = self.get_image_and_metadata(camera_name)
+            if err or not image_resp:
+                continue
+
+            # Original image dimensions
+            orig_w = image_resp.shot.image.cols
+            orig_h = image_resp.shot.image.rows
+
+            # Build PIL Image & rotate for detection
+            pil_img = Image.open(io.BytesIO(image_resp.shot.image.data))
+            rot_angle = rotation_for_camera(camera_name)
+            if rot_angle != 0:
+                pil_det = pil_img.rotate(rot_angle, expand=True)
+            else:
+                pil_det = pil_img
+
+            # Call YOLO API
+            buf = io.BytesIO()
+            pil_det.save(buf, format="JPEG", quality=95)
+            buf.seek(0)
+            files = {"file": (f"{camera_name}.jpg", buf, "image/jpeg")}
+            params = {"threshold": threshold}
+
+            try:
+                resp = requests.post(f"{self.yolo_api_url}/detect/", files=files, params=params, timeout=10)
+                if resp.status_code != 200:
+                    continue
+
+                dets = resp.json().get("detections", [])
+                if not dets:
+                    continue
+
+                # Prepare transform helpers
+                t_snapshot = image_resp.shot.transforms_snapshot
+                frame_cam = image_resp.shot.frame_name_image_sensor
+                cam_to_body = frame_helpers.get_a_tform_b(t_snapshot, frame_cam, frame_helpers.BODY_FRAME_NAME)
+                if not cam_to_body:
+                    continue
+                body_to_cam = cam_to_body.inverse()
+
+                # Rotated image dimensions
+                rot_w, rot_h = pil_det.size
+
+                for det in dets:
+                    # YOLO-person API already filters person; treat all
+                    box = det.get("bbox") or det.get("box")
+                    if not box or len(box) != 4:
+                        continue
+
+                    cx_rot = (box[0] + box[2]) / 2.0
+                    cy_rot = (box[1] + box[3]) / 2.0
+
+                    # Map rotated coords back to original orientation
+                    if rot_angle == -90:
+                        px_orig = cy_rot
+                        py_orig = orig_h - cx_rot
+                    elif rot_angle == 180:
+                        px_orig = orig_w - cx_rot
+                        py_orig = orig_h - cy_rot
+                    else:
+                        # General fallback – uses helper
+                        px_orig, py_orig = transform_point_for_rotation(
+                            cx_rot, cy_rot, orig_w, orig_h, rot_w, rot_h, rot_angle)
+
+                    # Ray direction in camera frame
+                    ray_cam = pixel_to_camera_space(image_resp.source, px_orig, py_orig)
+
+                    # Rotate into body frame (ignore translation)
+                    ray_body = body_to_cam.rotation.transform_point(ray_cam[0], ray_cam[1], ray_cam[2])
+
+                    vec_body = to_unit(np.array(ray_body))
+                    if vec_body is not None:
+                        all_vectors.append(vec_body)
+
+            except Exception as e:
+                print(f"Error processing camera {camera_name}: {e}")
+                continue
+
+        return all_vectors

@@ -23,6 +23,7 @@ class PerceptionLogger:
         self.vision_interval = float(os.getenv("VISION_INTERVAL", "0"))
         self.terrain_interval = float(os.getenv("TERRAIN_INTERVAL", "0"))
         self.object_detection_interval = float(os.getenv("OBJECT_DETECTION_INTERVAL", "0"))
+        # Placeholder for person direction thread & interval; will initialize after timestamp
         
         # Create logs directory if it doesn't exist
         self.logs_dir = "perception_logs"
@@ -34,10 +35,11 @@ class PerceptionLogger:
         self.vision_log_path = os.path.join(self.logs_dir, f"vision_{timestamp}.jsonl") # For legacy
         self.terrain_log_path = os.path.join(self.logs_dir, f"terrain_{timestamp}.jsonl")
         self.object_detection_log_path = os.path.join(self.logs_dir, f"objects_{timestamp}.jsonl")
-        
-        # Remove annotated image saving setup
-        # self.annotated_image_dir = "images/annotated"
-        # os.makedirs(self.annotated_image_dir, exist_ok=True)
+
+        # --- Person direction (unit vectors to persons) ---
+        self.person_interval = float(os.getenv("PERSON_VECTOR_INTERVAL", "0.2"))  # seconds between runs
+        self.person_thread = None
+        self.person_vectors_log_path = os.path.join(self.logs_dir, f"person_vectors_{timestamp}.jsonl")
         
         print(f"Perception logs will be saved to: {self.logs_dir}")
         # print(f"Annotated images will be saved to: {self.annotated_image_dir}") # Removed
@@ -69,6 +71,11 @@ class PerceptionLogger:
         self.object_detection_thread = threading.Thread(target=self._object_detection_loop)
         self.object_detection_thread.daemon = True
         #self.object_detection_thread.start()
+
+        # Start person direction thread
+        self.person_thread = threading.Thread(target=self._person_direction_loop)
+        self.person_thread.daemon = True
+        self.person_thread.start()
         
         print("Perception logging started")
     
@@ -85,6 +92,7 @@ class PerceptionLogger:
             self.vision_thread, 
             self.terrain_thread, 
             self.object_detection_thread
+            , self.person_thread
         ]
         
         for thread in threads_to_join:
@@ -241,6 +249,34 @@ class PerceptionLogger:
             # Sleep accounting for processing time
             elapsed = time.time() - start_time
             sleep_time = max(0, self.object_detection_interval - elapsed)
+            if self.running:
+                time.sleep(sleep_time)
+
+    def _person_direction_loop(self):
+        """Background loop that computes unit direction vectors to detected persons."""
+        while self.running:
+            start_time = time.time()
+            try:
+                vectors = []
+                if self.spot_controller.connected:
+                    vectors = self.spot_controller.get_person_direction_vectors(threshold=0.25)
+                    
+                # Update SpotController attribute for consumption by LLMProcessor
+                self.spot_controller.latest_person_vectors = vectors
+
+                # Log to file
+                self._log_data(self.person_vectors_log_path, {"person_vectors": vectors})
+
+                # Broadcast via callback
+                if self.state_update_callback:
+                    self.state_update_callback({"person_vectors": vectors})
+
+            except Exception as e:
+                print(f"Error in person direction loop: {e}")
+
+            # Sleep until next run
+            elapsed = time.time() - start_time
+            sleep_time = max(0, self.person_interval - elapsed)
             if self.running:
                 time.sleep(sleep_time)
 
