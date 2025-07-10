@@ -223,6 +223,12 @@ class LLMProcessor:
         
         if latest_odometry_log:
             task_data["latest_odometry"] = latest_odometry_log
+
+        # Include most recent unit vectors to detected persons if available
+        if hasattr(self, 'spot_controller') and self.spot_controller and hasattr(self.spot_controller, 'get_latest_person_vectors'):
+            latest_person_vectors = self.spot_controller.get_latest_person_vectors()
+            if latest_person_vectors:
+                task_data["latest_person_vectors"] = latest_person_vectors
             
         #if latest_object_detection_log and 'objects' in latest_object_detection_log:
         #    # Add the latest detected objects to task_data
