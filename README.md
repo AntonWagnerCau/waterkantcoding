@@ -7,11 +7,19 @@ A voice-controlled agent for Boston Dynamics Spot robot. This application uses c
 3. Processes commands with a local LLM via Ollama/Google/Openrouter
 4. Controls a Boston Dynamics Spot robot based on user voice commands
 
-## Connect to Spot
+## Connect to Jetson
 The shell script connects to the PC via ssh on the back of the robot.
 ```shell
 sh utils/ssh-spot-login.sh
 ```
+
+## Start Docker Services on Jetson
+
+```shell
+sh utils/ssh-spot-login.sh
+```
+
+
 ## Setup
 
 Skip 1, 2, 6 if not running LLM locally

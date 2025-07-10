@@ -165,7 +165,6 @@ if __name__ == "__main__":
     arm = Arm()
     # arm.interactive_control()
     # arm.move_to_position(POINTER_POSITION)
-    # arm.move_to_xyz(0.1, 0.1, 0.1)
 
 
 
