@@ -1177,6 +1177,13 @@ class SpotController:
     # Person direction helpers
     # ------------------------------------------------------------------
 
+
+    def vec_to_angle_deg(self, x, y):
+        angle_rad = math.atan2(y, x)
+        angle_deg = math.degrees(angle_rad)
+
+        return angle_deg
+
     def get_latest_person_vectors(self):
         """Return most recently detected list of unit direction vectors to persons.
 
@@ -1293,7 +1300,7 @@ class SpotController:
 
                     vec_body = to_unit(np.array(ray_body))
                     if vec_body is not None:
-                        all_vectors.append(vec_body)
+                        all_vectors.append(self.vec_to_angle_deg(vec_body[0], vec_body[1]))
 
             except Exception as e:
                 print(f"Error processing camera {camera_name}: {e}")

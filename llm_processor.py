@@ -35,18 +35,13 @@ Available actions:
 Robot Arm Control (So101 via phosphobot):
 - arm_move_absolute(rz, open, max_trials, position_tolerance, orientation_tolerance): 
   Move arm to absolute rotation angle
-  * rz: Rotation (angle in degrees relative to forward direction of robot)
+  * rz: Rotation (angle in degrees relative to forward direction of robot) degree 0 being forward, 90 to the left, -90 to the right.
   * open: Gripper state 0.0=closed to 1.0=fully open
   * max_trials: Maximum attempts to reach position (1-50, default 10)
   * position_tolerance: Position accuracy in meters (0.001-0.1, default 0.03)
   * orientation_tolerance: Orientation accuracy in radians (0.01-1.0, default 0.2)
 
 - gripper_control(open): Control gripper independently (0.0=closed, 1.0=open)
-
-Robot Arm Workspace:
-- Position range: x=+-40cm, y=+-40.cm, z=0.0-60cm from robot base
-- Orientation: Rotation within joint limits
-- Precision: Can achieve 1mm position accuracy and 0.57 Degrees orientation accuracy
 
 ANY ARM COMMAND THAT IS LESS THAN 1.0 IS INVALID.
 
@@ -107,7 +102,7 @@ class SpotParameters(BaseModel):
     bh: Optional[float] = Field(None, description="BODY: Body height in meters, to stand at relative to a nominal stand height")
     
     # Robot arm absolute positioning (So101 phosphobot format) - range ±0.4m x,y; 0-0.6m z
-    rz: Optional[float] = Field(None, description="ARM: Yaw rotation of the arm in degrees clockwise (negative) or counterclockwise (positive)")
+    rz: Optional[float] = Field(None, description="ARM: Yaw rotation of the arm in degrees clockwise (negative) or counterclockwise (positive), 0 being forward")
     open: Optional[float] = Field(None, description="ARM: Gripper state: 0.0=closed, 1.0=fully open")
     
     # Robot arm control parameters
@@ -251,7 +246,7 @@ class LLMProcessor:
         if self.spot_controller and hasattr(self.spot_controller, 'get_latest_person_vectors'):
             latest_person_vectors = self.spot_controller.get_latest_person_vectors()
             if latest_person_vectors:
-                task_data["latest_person_vectors"] = latest_person_vectors
+                task_data["latest_person_angles"] = latest_person_vectors
             
         #if latest_object_detection_log and 'objects' in latest_object_detection_log:
         #    # Add the latest detected objects to task_data
