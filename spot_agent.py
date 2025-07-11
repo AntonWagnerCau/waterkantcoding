@@ -387,32 +387,12 @@ def main():
 
                     elif action == 'arm_move_absolute':
                         result = spot_controller.arm_move_absolute(
-                            x=params.get('x', 0) or 0,
-                            y=params.get('y', 0) or 0,
-                            z=params.get('z', 0) or 0,
-                            rx=params.get('rx', 0) or 0,
-                            ry=params.get('ry', 0) or 0,
                             rz=params.get('rz', 0) or 0,
                             open=params.get('open', 0) or 0,
                             max_trials=params.get('max_trials', 10) or 10,
                             position_tolerance=params.get('position_tolerance', 0.03) or 0.03,
                             orientation_tolerance=params.get('orientation_tolerance', 0.2) or 0.2
                         )
-                        action_result = {"success": result}
-
-                    elif action == 'arm_move_relative':
-                        result = spot_controller.arm_move_relative(
-                            dx=params.get('dx', 0) or 0,
-                            dy=params.get('dy', 0) or 0,
-                            dz=params.get('dz', 0) or 0,
-                            drx=params.get('drx', 0) or 0,
-                            dry=params.get('dry', 0) or 0,
-                            drz=params.get('drz', 0) or 0
-                        )
-                        action_result = {"success": result}
-
-                    elif action == 'arm_home':
-                        result = spot_controller.arm_home()
                         action_result = {"success": result}
 
                     elif action == 'gripper_control':

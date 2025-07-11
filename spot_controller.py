@@ -79,11 +79,11 @@ class SpotController:
         self.latest_person_vectors = []
 
         self.BASE_URL = os.getenv("BASE_URL", "http://192.168.10.235:3000")
-        self.init_robot()
+        #self.init_robot()
         self.move_absolute(x=-50, y=50, z=0, rx=0, ry=0, rz=0)
 
-    def init_robot(self, robot_id=1):
-        self.arm_home()
+    #def init_robot(self, robot_id=1):
+    #    self.arm_home()
     
     def move_absolute(self, x, y, z, rx=0, ry=0, rz=0):
         url = f"{self.BASE_URL}/move/absolute"
@@ -292,16 +292,16 @@ class SpotController:
             print(f"Error tilting: {e}")
             return False
         
-    def arm_move_absolute(self, x=0.0, y=0.0, z=0.0, rx=0.0, ry=0.0, rz=0.0, open=0.0, max_trials=10, position_tolerance=0.03, orientation_tolerance=0.2):
-        """Move So101 robot arm to absolute position with full 6-DOF control via phosphobot"""
+    def arm_move_absolute(self, rz=0.0, open=0.0, max_trials=10, position_tolerance=0.03, orientation_tolerance=0.2):
+        """Move So101 robot arm to absolute rotation via phosphobot"""
         url = f"{self.BASE_URL}/move/absolute"
         payload = {
-            "x": x,
-            "y": y,
-            "z": z,
-            "rx": rx,
-            "ry": ry,
-            "rz": rz,
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "rx": 0,
+            "ry": 0,
+            "rz": int(rz),
             "open": open,
             "max_trials": max_trials,
             "position_tolerance": position_tolerance,
@@ -315,30 +315,6 @@ class SpotController:
         except Exception as e:
             print(f"Error moving arm absolute: {e}")
             return False
-
-    def arm_move_relative(self, dx=0.0, dy=0.0, dz=0.0, drx=0.0, dry=0.0, drz=0.0):
-        """Move So101 robot arm relative to current position"""
-        url = f"{self.BASE_URL}/move/relative"
-        payload = {
-            "x": dx,
-            "y": dy,
-            "z": dz,
-            "rx": drx,
-            "ry": dry,
-            "rz": drz
-        }
-        
-        try:
-            response = requests.post(url, json=payload)
-            print("Arm Move Relative:", response.status_code, response.json())
-            return response.status_code == 200
-        except Exception as e:
-            print(f"Error moving arm relative: {e}")
-            return False
-
-    def arm_home(self):
-        """Move So101 robot arm to home/safe position"""
-        return self.arm_move_absolute(x=10.0, y=0.0, z=10.0, rx=0.0, ry=0.0, rz=0.0, open=0.0)
 
     def gripper_control(self, open=0.0):
         """Control So101 robot arm gripper independently"""

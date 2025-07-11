@@ -22,7 +22,7 @@ Environment information available to you:
 - person detection: Frequently updated vectors pointing towards detected persons
 
 The system automatically runs person detection in the background and provides:
-- position: 3D coordinates relative to the robot's body frame {x, y, z}
+- angle: angle to the person detected in degrees
 
 Available actions:
 - relative_move(x, y): Move relative to the current position (CAN BE USED TO STRAIFE, both x and y can be used together).
@@ -33,27 +33,22 @@ Available actions:
 - task_complete(success, reason): Indicate that the task is complete with success status and reason
 
 Robot Arm Control (So101 via phosphobot):
-- arm_move_absolute(armx, army, armz, rx, ry, rz, open, max_trials, position_tolerance, orientation_tolerance): 
-  Move arm to absolute position in 3D space with orientation and gripper control
-  * x, y, z: Cartesian coordinates in meters (range: -40.0 to +40.0 for x,y; 0.0 to 60.0 for z) x is foward, y is left, z is up
-  * rx, ry, rz: Orientation in degrees (roll, pitch, yaw)
+- arm_move_absolute(rz, open, max_trials, position_tolerance, orientation_tolerance): 
+  Move arm to absolute rotation angle
+  * rz: Rotation (angle in degrees relative to forward direction of robot)
   * open: Gripper state 0.0=closed to 1.0=fully open
   * max_trials: Maximum attempts to reach position (1-50, default 10)
   * position_tolerance: Position accuracy in meters (0.001-0.1, default 0.03)
   * orientation_tolerance: Orientation accuracy in radians (0.01-1.0, default 0.2)
 
-- arm_move_relative(dx, dy, dz, drx, dry, drz): Move arm relative to current position
-  * dx, dy, dz: Relative position change in cm (range: ±40cm for dx,dy; ±60cm for dz) dx is forward, dy is left, dz is up
-  * drx, dry, drz: Relative orientation change in degrees
-- arm_home(): Move arm to home/safe position (0,0,0,0,0,0)
 - gripper_control(open): Control gripper independently (0.0=closed, 1.0=open)
 
 Robot Arm Workspace:
 - Position range: x=+-40cm, y=+-40.cm, z=0.0-60cm from robot base
-- Orientation: Full 6-DOF control within joint limits
+- Orientation: Rotation within joint limits
 - Precision: Can achieve 1mm position accuracy and 0.57 Degrees orientation accuracy
 
-ANY ARM COMMAND THAT IS LESS THAN 1.0 IS INVALID. YOU ARE DEALING WITH CM NOT METERS. 
+ANY ARM COMMAND THAT IS LESS THAN 1.0 IS INVALID.
 
 First, evaluate the command to understand what you're being asked to do.
 Use this information, if necessary, to plan your actions, execute them, and monitor progress until the task is complete.
@@ -77,14 +72,14 @@ Respond ONLY with valid JSON in this format:
     }
 }
 
-Example response for "pick up the object infront of you":
+Example response for "point to the person to the right of you":
 {
-    "thought": "I need to move the arm to grasp the object, first moving to position forward, then closing gripper",
+    "thought": "I need to move the arm to the direction of the person to the left, my input tells me the person is at 26 degrees. Rotating the arm to 26 degrees",
     "action": "arm_move_absolute",
-    "parameters": {"x": 30.0, "y": 0.0, "z": 10.0, "rx": 0, "ry": 0, "rz": 0, "open": 1.0, "max_trials": 10, "position_tolerance": 0.01, "orientation_tolerance": 0.1},
+    "parameters": {"rz": 26, "open": 0, "max_trials": 10, "position_tolerance": 0.01, "orientation_tolerance": 0.1},
     "task_status": {
         "complete": false,
-        "reason": "Moving arm to object position with gripper open"
+        "reason": "Moving arm to point to person"
     }
 }
 """
@@ -112,21 +107,8 @@ class SpotParameters(BaseModel):
     bh: Optional[float] = Field(None, description="BODY: Body height in meters, to stand at relative to a nominal stand height")
     
     # Robot arm absolute positioning (So101 phosphobot format) - range ±0.4m x,y; 0-0.6m z
-    armx: Optional[float] = Field(None, description="ARM: X-Component of the robot arm gripper position in cm (range: -40.0 to +40.0)")
-    army: Optional[float] = Field(None, description="ARM: Y-Component of the robot arm gripper position in cm (range: -40.0 to +40.0)")
-    armz: Optional[float] = Field(None, description="ARM: Z-Component of the robot arm gripper position in cm (range: 0.0 to 60.0)")
-    rx: Optional[float] = Field(None, description="ARM: Roll rotation of the gripper in radians")
-    ry: Optional[float] = Field(None, description="ARM: Pitch rotation of the gripper in radians") 
-    rz: Optional[float] = Field(None, description="ARM: Yaw rotation of the gripper in radians")
+    rz: Optional[float] = Field(None, description="ARM: Yaw rotation of the arm in degrees clockwise (negative) or counterclockwise (positive)")
     open: Optional[float] = Field(None, description="ARM: Gripper state: 0.0=closed, 1.0=fully open")
-    
-    # Robot arm relative movement
-    dx: Optional[float] = Field(None, description="ARM: Relative X movement in cm (range: ±40cm)")
-    dy: Optional[float] = Field(None, description="ARM: Relative Y movement in cm (range: ±40cm)")
-    dz: Optional[float] = Field(None, description="ARM: Relative Z movement in cm (range: ±60cm)")
-    drx: Optional[float] = Field(None, description="ARM: Relative roll rotation in degrees")
-    dry: Optional[float] = Field(None, description="ARM: Relative pitch rotation in degrees")
-    drz: Optional[float] = Field(None, description="ARM: Relative yaw rotation in degrees")
     
     # Robot arm control parameters
     max_trials: Optional[int] = Field(None, description="Maximum attempts to reach target position (1-50)")
