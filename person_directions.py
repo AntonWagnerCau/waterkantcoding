@@ -18,7 +18,7 @@ from bosdyn.client import frame_helpers
 # HTTP session to reuse across calls
 import requests
 
-YOLO_API_URL = os.getenv("YOLO_API_URL", "http://localhost:8000")
+YOLO_API_URL = os.getenv("YOLO_API_URL", "http://localhost:8085")
 SESSION = requests.Session()
 
 # Load environment variables
@@ -82,10 +82,25 @@ def process_camera(spot: SpotController, camera_name: str, threshold: float = 0.
     buf = io.BytesIO()
     pil_det.save(buf, format="JPEG", quality=95)
     buf.seek(0)
-    files = {"file": (f"{camera_name}.jpg", buf, "image/jpeg")}
+
+    # fill overlapping with black to prevent YOLO from detecting
+    img = Image.open(buf).convert("RGB")
+    draw = ImageDraw.Draw(img)
+    if camera_name=='fontleft_fisheye_image':
+        draw.rectangle([0, 0, 74, img.height], fill=(0, 0, 0))
+    elif camera_name=='left_fisheye_image':
+        draw.rectangle([600, 0, 639, img.height - 1], fill=(0, 0, 0))
+    elif camera_name=='right_fisheye_image':
+        draw.rectangle([0, 0, 40, img.height], fill=(0, 0, 0))
+
+    buf_new = io.BytesIO()
+    img.save(buf_new, format="JPEG", quality=95)
+    buf_new.seek(0)
+
+    files = {"file": (f"{camera_name}.jpg", buf_new, "image/jpeg")}
     params = {"threshold": threshold}
 
-    current_images[camera_name] = buf
+    current_images[camera_name] = buf_new
 
     resp = SESSION.post(f"{YOLO_API_URL}/detect/", files=files, params=params, timeout=10)
 
@@ -249,8 +264,7 @@ class GuiApp:
 def vec_to_angle_deg(x, y):
     angle_rad = math.atan2(y, x)
     angle_deg = math.degrees(angle_rad)
-    if angle_deg < 0:
-        angle_deg += 360
+
     return angle_deg
 
 def main(cam_sources, loop_delay: float = 3):
