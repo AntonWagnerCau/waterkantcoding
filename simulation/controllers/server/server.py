@@ -15,7 +15,7 @@ if __name__ == "__main__":
         controller.simulation.start_in_thread()  # <-- Start simulation loop in background
         print('Simulation started in background thread.')
 
-    spot_agent = SpotAgent(controller)
+    spot_agent = SpotAgent(controller, isSim=True)
     spot_agent.start()
     print('Agent initialized', spot_agent)
     print("[Main] Server running. Press Ctrl+C to exit.")
