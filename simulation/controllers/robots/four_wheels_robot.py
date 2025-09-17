@@ -58,42 +58,6 @@ class FourWheelsRobot:
             return None
         return {"x": hit_point[0], "y": hit_point[1], "z": hit_point[2]}
 
-    def get_object_locations(self, detections, image_response, target_frame_name=frame_helpers.BODY_FRAME_NAME):
-        try:
-            img = Image.open(io.BytesIO(image_response.shot.image.data))
-            img_width, img_height = img.size
-            located_objects = []
-
-            for detection in detections:
-                box = detection['box']
-                center_px_x = (box[0] + box[2]) / 2
-                center_px_y = (box[1] + box[3]) / 2
-
-                focal_length_x = 320
-                focal_length_y = 320
-                principal_point_x = 320
-                principal_point_y = 240
-
-                norm_x = (center_px_x - principal_point_x) / focal_length_x
-                norm_y = (center_px_y - principal_point_y) / focal_length_y
-
-                ray_dir = [norm_x, norm_y, 1.0]
-                ray_origin = [0.0, 0.1, 0.0]  # Assumed camera position
-
-                hit = self.cast_ray(ray_origin, ray_dir)
-                if hit:
-                    located_objects.append({
-                        'label': detection['label'],
-                        'score': detection['score'],
-                        'box': detection['box'],
-                        'position': hit,
-                        'source_camera': "simulation_camera"
-                    })
-
-            return located_objects, None
-
-        except Exception as e:
-            return None, f"Simulation get_object_locations error: {e}"
 
     def _wait_for_valid_gps(self):
         if self.runs_in_server:
@@ -352,48 +316,3 @@ class FourWheelsRobot:
                 self._set_motor_velocity(current_speed, current_speed)
 
             self._set_motor_velocity(0, 0)
-  
-    def get_object_locations(self, detections, image_response, target_frame_name=frame_helpers.BODY_FRAME_NAME):
-        try:
-            # Open the simulated image
-            img = Image.open(io.BytesIO(image_response.shot.image.data))
-            img_width, img_height = img.size
-
-            located_objects = []
-
-            for detection in detections:
-                box = detection['box']
-                center_px_x = (box[0] + box[2]) / 2
-                center_px_y = (box[1] + box[3]) / 2
-
-                # Assume focal length and principal point like fake intrinsics
-                focal_length_x = 320
-                focal_length_y = 320
-                principal_point_x = 320
-                principal_point_y = 240
-
-                norm_x = (center_px_x - principal_point_x) / focal_length_x
-                norm_y = (center_px_y - principal_point_y) / focal_length_y
-
-                depth_estimate = 1.0  # Assume 1 meter in front of robot
-
-                object_x = norm_x * depth_estimate
-                object_y = norm_y * depth_estimate
-                object_z = depth_estimate
-
-                located_objects.append({
-                    'label': detection['label'],
-                    'score': detection['score'],
-                    'box': detection['box'],
-                    'position': {
-                        'x': object_x,
-                        'y': object_y,
-                        'z': object_z
-                    },
-                    'source_camera': "simulation_camera"
-                })
-
-            return located_objects, None
-
-        except Exception as e:
-            return None, f"Simulation get_object_locations error: {e}"

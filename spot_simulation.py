@@ -49,11 +49,3 @@ class SpotSimulation:
         last_image_paths = self.robot.take_pictures(camera_names)
         self.last_image_path = last_image_paths[0]
         return last_image_paths
-
-    def get_object_locations(self, detections, image_response, target_frame_name=frame_helpers.BODY_FRAME_NAME):
-        return self.robot.get_object_locations(detections, image_response, frame_helpers.BODY_FRAME_NAME)
-
-
-   
-
-    
