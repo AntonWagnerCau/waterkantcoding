@@ -1,3 +1,4 @@
+
 import requests
 import numpy as np
 import time
@@ -15,8 +16,8 @@ from bosdyn.client.frame_helpers import get_vision_tform_body, VISION_FRAME_NAME
 from bosdyn.client import frame_helpers
 from bosdyn.client import ray_cast
 from bosdyn.api import geometry_pb2
+import sys
 import io
-from utils.timestamp_utils import parse_timestamp
 from bosdyn.client.ray_cast import RayCastClient
 from bosdyn.api import ray_cast_pb2
 import math # Import math for degrees conversion
@@ -43,9 +44,15 @@ def transform_point_for_rotation(px, py, orig_w, orig_h, rot_w, rot_h, angle_deg
 
     return cx_orig, cy_orig
 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.timestamp_utils import parse_timestamp
+from spot_simulation import SpotSimulation
+
 class SpotController:
     """Controls the Boston Dynamics Spot robot"""
-    def __init__(self):
+    def __init__(self, isSimulation=False):
+        self.simulation = SpotSimulation() if isSimulation else None
+
         self.connected = False
         self.robot = None
         self.command_client = None
@@ -75,6 +82,10 @@ class SpotController:
     def connect(self):
         """Connect to the Spot robot"""
         try:
+            if self.simulation:
+                # no setup needed when only simulation
+                return
+            # Initialize the SDK
             sdk = create_standard_sdk("SpotAgentClient")
             spot_ip = os.getenv("SPOT_IP")
             if not spot_ip:
@@ -114,8 +125,10 @@ class SpotController:
     
     def get_odometry(self):
         """Retrieve the robot's current position and orientation (in degrees)."""
-        # In simulation mode, just return the last known/simulated state
+        if self.simulation:
+            return self.simulation.get_odometry()
         if not self.connected:
+            # In simulation mode, just return the last known/simulated state
             return {
                 "position": self.position,
                 "orientation": self.orientation # Assume simulated orientation is already in degrees if needed
@@ -179,7 +192,7 @@ class SpotController:
         else:
             # Use online vision model to analyze the image
             try:
-                url = "http://134.245.232.230:8000/caption"
+                url = f"{self.yolo_api_url}/caption"
                 for i, image_path in enumerate(image_paths):
                     with open(image_path, "rb") as f:
                         response = requests.post(
@@ -205,6 +218,9 @@ class SpotController:
     
     def relative_move(self, delta_x, delta_y):
         """Command the robot to move relative to the current position"""
+        if self.simulation != None:
+            return self.simulation.relative_move(delta_x, delta_y)
+
         if not self.connected:
             print("Robot not connected, simulating movement")
             # Update simulated position
@@ -237,6 +253,9 @@ class SpotController:
     
     def turn(self, degrees):
         """Command the robot to turn by specified degrees"""
+        if self.simulation:
+            radians = np.radians(-degrees)
+            return self.simulation.turn(radians)
         if not self.connected:
             print("Robot not connected, simulating turn")
             # Update simulated orientation
@@ -267,6 +286,8 @@ class SpotController:
     
     def sit(self):
         """Command the robot to sit"""
+        if self.simulation:
+            return self.simulation.sit()
         if not self.connected:
             print("Robot not connected, simulating sit")
             return True
@@ -281,6 +302,8 @@ class SpotController:
     
     def stand(self):
         """Command the robot to stand"""
+        if self.simulation:
+            return self.simulation.stand()
         if not self.connected:
             print("Robot not connected, simulating stand")
             return True
@@ -295,6 +318,8 @@ class SpotController:
 
     def take_pictures(self, camera_names=["frontleft_fisheye_image", "frontright_fisheye_image"]):
         """Capture an image from the robot's front camera"""
+        if self.simulation:
+            return self.simulation.take_pictures(camera_names)
         if not self.connected:
             # In simulation mode, use a placeholder timestamp
             self.last_image_path = f"images/spot_image_sim_{int(time.time())}.jpg"
@@ -337,6 +362,9 @@ class SpotController:
     
     def disconnect(self):
         """Disconnect from the robot"""
+        if self.simulation:
+            # No connection when in simulation
+            return
         if self.connected:
             try:
                 # Return the lease
@@ -914,6 +942,35 @@ class SpotController:
                    image_response: The ImageResponse object from the SDK, or None on error.
                    error_message: String description of the error, or None on success.
         """
+        if self.simulation:
+            try:
+                # Load the last saved image from Webots simulation
+                img_path = self.simulation.take_pictures(camera_names=[source_name])[0]
+                print('BP: img_path', img_path)
+                with open(img_path, "rb") as f:
+                    image_data = f.read()
+
+                # Fake the ImageResponse structure
+                class SimulatedImageResponse:
+                    def __init__(self, data):
+                        self.shot = type('shot', (object,), {})()
+                        self.shot.image = type('image', (object,), {})()
+                        self.shot.image.data = data
+                        self.shot.image.cols = 10
+                        self.shot.image.rows = 10
+                        self.source = type('source', (object,), {})()
+                        self.source.pinhole = type('pinhole', (object,), {})()
+                        self.source.pinhole.intrinsics = type('intrinsics', (object,), {})()
+                        self.source.pinhole.intrinsics.focal_length = type('focal_length', (object,), {'x': 320, 'y': 320})
+                        self.source.pinhole.intrinsics.principal_point = type('principal_point', (object,), {'x': 320, 'y': 240})
+                        self.shot.transforms_snapshot = True  # dummy to pass checks
+                        self.shot.frame_name_image_sensor = "simulation_camera"
+
+                return SimulatedImageResponse(image_data), None
+            
+            except Exception as e:
+                return None, f"Simulation get_image_and_metadata error: {e}"
+
         if not self.image_client:
             return None, "Image client not initialized."
         try:
