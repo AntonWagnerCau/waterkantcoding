@@ -256,5 +256,5 @@ Robot {
   boundingObject USE BODY
   physics Physics {
   }
-  controller "spot-test"
+  controller "server"
 }

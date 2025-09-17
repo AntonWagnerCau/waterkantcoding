@@ -1,8 +1,5 @@
-from controller import Robot
 import sys
 import os
-
-
 
 sys.path.append(os.path.abspath(os.path.join(__file__, "..", "..", "..", "..")))
 from spot_controller import SpotController

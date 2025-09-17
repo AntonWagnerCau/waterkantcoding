@@ -52,3 +52,12 @@ Speak commands into your microphone to control the Spot robot. Examples:
 - "Turn right 90 degrees"
 - "Sit down"
 - "Stand up"
+
+## Simulation with Webots
+
+0. Make sure you have created your .env and installed the python packages
+1. Open Webots
+2. Load the world Basic.wbt
+3. Under Robot/Controller (on the left side in the webots gui) the script "server" should be selected
+4. Run "nc localhost 65432" in the terminal 
+5. Write down commands like "Turn 90 degrees to the right"

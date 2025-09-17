@@ -6,6 +6,7 @@ import os
 import threading
 import queue
 from faster_whisper import WhisperModel
+import ctranslate2
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
 # Audio recording parameters
@@ -36,7 +37,8 @@ class AudioProcessor:
         compute_type = os.getenv("WHISPER_COMPUTE_TYPE", "float32")
         print(f"Loading Whisper model '{model_size}' (this may take a moment)...")
         
-        self.model = WhisperModel(model_size, device="cuda", compute_type=compute_type)
+        device = "cuda" if ctranslate2.get_supported_compute_types("cpu") and "cuda" in ctranslate2.get_supported_compute_types("cpu") else "cpu"
+        self.model = WhisperModel(model_size, device=device, compute_type=compute_type)
         print("Whisper model loaded successfully")
         
         # Start background transcription thread

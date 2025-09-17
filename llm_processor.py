@@ -6,7 +6,9 @@ from google import genai
 from pydantic import BaseModel, Field
 from utils.timestamp_utils import parse_timestamp
 from spot_controller import SpotController
+from dotenv import load_dotenv
 
+load_dotenv()
 
 # LLM System Prompt for Spot control
 SPOT_SYSTEM_PROMPT = """
